@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>버블 슈터</title>
+<style>
+  :root{
+    --bg:#15171c; --surface:#22262f; --line:rgba(255,255,255,.09);
+    --ink:#eef1f6; --muted:#868fa1; --accent:#5b8def; --danger:#e5484d;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    background:var(--bg);
+    color:var(--ink); overflow:hidden; user-select:none;
+    display:flex; flex-direction:column; justify-content:center; align-items:center;
+    touch-action:none;
+  }
+  /* Game aspect ratio (width : height). Change these two numbers to set the ratio. */
+  :root{ --ar-w:9; --ar-h:13; --topbar-h:74px; }
+  .topbar{
+    width:min(100vw,520px); height:var(--topbar-h); flex:0 0 auto; box-sizing:border-box;
+    padding:calc(env(safe-area-inset-top) + 8px) 20px 16px;
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .topicons{ display:flex; gap:12px; align-items:center; }
+  .wrap{
+    aspect-ratio: var(--ar-w) / var(--ar-h);
+    height: min(calc(100dvh - var(--topbar-h)), 100vw * (var(--ar-h) / var(--ar-w)));
+    width: auto; max-width:100vw;
+    display:flex; flex-direction:column; position:relative;
+    overflow:hidden;
+  }
+  .stage{position:relative; flex:1; min-height:0;}
+  canvas{display:block; position:absolute; left:50%; top:0; transform:translateX(-50%);}
+  .overlay{
+    position:absolute; inset:0; display:none; flex-direction:column; z-index:30;
+    align-items:center; justify-content:center; gap:16px; text-align:center;
+    background:rgba(15,17,22,.9); padding:24px;
+  }
+  .overlay.show{display:flex;}
+  #startScreen{ background:var(--bg); }
+  .overlay h2{font-size:30px; font-weight:600;}
+  .overlay .brand{color:var(--accent);}
+  .overlay .big{font-size:14px; color:var(--muted);}
+  .overlay .scoreline{font-size:19px;} .overlay .scoreline b{color:var(--accent);}
+  .ovbtns{ display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap; }
+  .scstats{ width:min(280px,80%); display:flex; flex-direction:column; gap:6px; margin:4px 0; }
+  .scrow{ display:flex; justify-content:space-between; align-items:center; font-size:14px;
+    background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:8px 13px; }
+  .scrow span{ color:var(--muted); }
+  .scrow b{ font-weight:800; font-variant-numeric:tabular-nums; }
+  .scbtns{ margin-top:auto; padding-top:6px; display:flex; flex-direction:column; gap:10px; align-items:center; width:100%; }
+  .menu{ gap:10px; }
+  .overlay.menu{ justify-content:flex-start; overflow-y:auto; padding-top:36px; padding-bottom:36px; }
+  .setcat{ width:min(280px,80%); text-align:left; font-size:11px; font-weight:700; letter-spacing:1.5px;
+    text-transform:uppercase; color:var(--muted); margin:14px 0 2px; padding-bottom:6px;
+    border-bottom:1px solid var(--line); }
+  .btn{
+    font-family:inherit; font-size:16px; font-weight:600; color:#fff;
+    background:var(--accent); border:none; border-radius:10px; padding:12px 28px;
+    cursor:pointer; transition:opacity .12s, transform .05s;
+  }
+  .btn:active{transform:translateY(1px); opacity:.9;}
+  .btn.wide{ width:min(280px,80%); }
+  .btn.ghost{ background:var(--surface); border:1px solid var(--line); color:var(--ink); }
+  .setrow{ width:min(280px,80%); display:flex; align-items:center; justify-content:space-between;
+    background:var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding:8px 14px; box-sizing:border-box; font-size:16px; font-weight:600; color:var(--ink); }
+  .setrow input[type=color]{ width:40px; height:28px; border:1px solid var(--line); border-radius:6px;
+    background:none; padding:0; cursor:pointer; }
+  .lbname{ display:flex; gap:8px; align-items:center; }
+  .lbname input{ font-family:inherit; font-size:15px; padding:9px 12px; border-radius:10px;
+    border:1px solid var(--line); background:var(--surface); color:var(--ink); width:150px; }
+  .lbhead{ margin:4px 0 0; font-size:15px; font-weight:800; letter-spacing:.5px; color:var(--ink); }
+  .lbnote{ font-size:12px; color:var(--muted); margin-top:-4px; }
+  .lb{ list-style:none; margin:0; padding:0; width:min(300px,86%); max-height:230px; overflow-y:auto;
+    display:flex; flex-direction:column; gap:3px; }
+  .lb li{ display:flex; align-items:center; gap:10px; padding:6px 12px; border-radius:8px;
+    background:var(--surface); font-size:14px; }
+  .lb li .rk{ width:20px; color:var(--muted); font-weight:700; text-align:right; }
+  .lb li .nm{ flex:1; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lb li .sc{ font-weight:700; font-variant-numeric:tabular-nums; }
+  .lb li.me{ background:#2c313c; outline:1px solid var(--accent); }
+  .lb li.current .nm{ color:#f2c416; font-weight:800; }
+  .lb li.empty{ justify-content:center; color:var(--muted); background:none; }
+  .lb li.me .sc{ color:var(--accent); }
+  .controls{
+    position:relative;
+    display:flex; gap:8px; align-items:center; justify-content:space-between;
+    padding:8px 12px calc(12px + env(safe-area-inset-bottom));
+  }
+  #ctrldim{ position:absolute; inset:0; background:rgba(15,17,22,.55); display:none; z-index:5; }
+  .side{ flex:1 1 0; display:flex; gap:6px; align-items:center; min-width:0; }
+  .side.right{ justify-content:flex-end; }
+  .center{ display:flex; gap:84px; align-items:center; flex:0 0 auto; }
+  .stat{
+    background:var(--surface); border:1px solid var(--line);
+    border-radius:9px; padding:4px 8px; line-height:1.05; text-align:center;
+  }
+  .hud{ display:flex; gap:18px; align-items:center; pointer-events:none; }
+  .hstat{ background:none; border:none; padding:0; line-height:1.05; text-align:center; }
+  .hstat b{ display:block; font-size:25px; font-weight:800; color:#3a3f4a; }
+  .hstat small{ font-size:11px; font-weight:600; color:#6b7280; letter-spacing:1px; text-transform:uppercase; }
+  .hstat.combo b{ color:#d69e00; }
+  .hstat.combo small{ color:#d69e00; }
+  .combobox{ display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:88px; }
+  .combobox .comboline{ display:flex; align-items:baseline; gap:6px; line-height:1; }
+  .combobox .comboline small{ font-size:11px; font-weight:700; color:#d69e00; letter-spacing:1px; text-transform:uppercase; }
+  .combobox .comboline b{ font-size:23px; font-weight:800; color:#d69e00; }
+  .combobox .combogain{ font-size:17px; font-weight:800; font-style:normal; color:#2f7d3a; opacity:0; }
+  .combobar{ width:100%; height:4px; border-radius:3px; background:rgba(58,63,74,.22); overflow:hidden; }
+  .combobar i{ display:block; height:100%; width:100%; background:#f2c416; border-radius:3px; }
+  .stat b{ display:block; font-size:14px; font-weight:600; }
+  .stat small{ font-size:8px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; }
+  .stat.combo{ background:#3a2f12; border-color:#6b5417; }
+  .stat.combo b{ color:#ffcf4d; }
+  /* --- flat / cel-style aim buttons (no gradients, no blur) --- */
+  .controls .dir{
+    color:#fff; font-family:inherit; font-weight:800;
+    border:3px solid #1b4fa8; border-radius:50%; background:#3b82f6; box-shadow:0 4px 0 #1b4fa8;
+    cursor:pointer; user-select:none; touch-action:manipulation;
+    display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+    -webkit-tap-highlight-color:transparent; transition:transform .04s;
+    width:58px; height:50px; padding:0;
+  }
+  .controls .dir svg{ width:60%; height:60%; display:block; transform:translateY(-2px); }
+  #left svg{ transform:translate(-2px,-2px); }
+  #right svg{ transform:translate(2px,-2px); }
+  /* flat / cel-style top buttons (match the aim buttons & bubbles), ~13% squashed */
+  .setbtn{ position:static; z-index:6; width:46px; height:40px;
+    border-radius:50%; cursor:pointer; user-select:none; touch-action:manipulation;
+    display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+    color:#fff; -webkit-tap-highlight-color:transparent; transition:transform .04s; padding:0; }
+  .setbtn svg{ width:82%; height:82%; display:block; }
+  #rankBtn{ background:#39ad5e; border:3px solid #217a3f; box-shadow:0 4px 0 #217a3f; }
+  #settings{ background:#8e44d0; border:3px solid #5e2b8f; box-shadow:0 4px 0 #5e2b8f; }
+  .setbtn:active{ transform:translateY(4px); box-shadow:none; }
+  .controls .dir:active{ transform:translateY(4px); box-shadow:none; }
+  .gaugerow{ display:flex; align-items:center; gap:8px; margin:0 12px; }
+  .gauge{
+    position:relative; height:16px; flex:1 1 auto; border-radius:8px;
+    background:var(--surface); border:1px solid var(--line); overflow:hidden;
+  }
+  .gfill{ position:absolute; left:0; top:0; bottom:0; width:0%;
+    background:linear-gradient(90deg,#5b8def,#7aa8ff); transition:width .2s; }
+  .gauge.full .gfill{ background:linear-gradient(90deg,#ffcf4d,#ffe08a); }
+  .gauge.full .glabel{ color:#3a2a00; }
+  .glabel{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:9px; font-weight:600; letter-spacing:.5px; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.5); }
+  /* dedicated skill button at the end of the gauge (bar itself is NOT tappable) */
+  .skillbtn{
+    flex:0 0 auto; width:30px; height:30px; border-radius:50%;
+    border:2px solid #3a3f4a; background:#22262f; color:#6b7280; font-size:15px;
+    display:flex; align-items:center; justify-content:center; cursor:default;
+    -webkit-tap-highlight-color:transparent; touch-action:manipulation; transition:transform .05s;
+  }
+  .skillbtn.ready{
+    cursor:pointer; color:#3a2a00; border-color:#c99a0e;
+    background:radial-gradient(circle at 40% 32%, #ffe08a, #f2c416);
+    animation:skillPulse .9s ease-in-out infinite;
+  }
+  .skillbtn.ready:active{ transform:scale(.9); }
+  @keyframes skillPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(255,207,77,0);} 50%{ box-shadow:0 0 12px 3px rgba(255,207,77,.75);} }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="hud">
+    <span class="hstat"><b id="score">0</b><small id="score-lbl">SCORE</small></span>
+    <span class="hstat"><b id="level">1</b><small id="level-lbl">STAGE</small></span>
+    <div class="combobox" id="combopill" style="display:none">
+      <div class="comboline"><small id="combo-lbl">COMBO</small><b id="combo">×2</b><i class="combogain" id="combogain"></i></div>
+      <div class="combobar"><i id="combobar-fill"></i></div>
+    </div>
+  </div>
+  <div class="topicons">
+    <button class="setbtn" id="rankBtn" aria-label="랭킹">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M6.5 5 C3 5 3 9.5 7 10.2" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>
+        <path d="M17.5 5 C21 5 21 9.5 17 10.2" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>
+        <path d="M6 3.5 H18 V6 C18 10.6 15.5 13 12 13 C8.5 13 6 10.6 6 6 Z" fill="#fff"/>
+        <rect x="11" y="12.6" width="2" height="3.6" fill="#fff"/>
+        <path d="M9.4 16 H14.6 L13.6 19.6 H10.4 Z" fill="#fff"/>
+        <rect x="7.4" y="19.4" width="9.2" height="2.3" rx="1.15" fill="#fff"/>
+      </svg>
+    </button>
+    <button class="setbtn" id="settings" aria-label="설정">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <defs><mask id="gearHole">
+          <rect width="24" height="24" fill="#fff"/>
+          <circle cx="12" cy="12" r="3.1" fill="#000"/>
+        </mask></defs>
+        <g fill="#fff" mask="url(#gearHole)">
+          <circle cx="12" cy="12" r="7.4"/>
+          <rect x="10.6" y="1.4" width="2.8" height="21.2" rx="1.3"/>
+          <rect x="10.6" y="1.4" width="2.8" height="21.2" rx="1.3" transform="rotate(45 12 12)"/>
+          <rect x="10.6" y="1.4" width="2.8" height="21.2" rx="1.3" transform="rotate(90 12 12)"/>
+          <rect x="10.6" y="1.4" width="2.8" height="21.2" rx="1.3" transform="rotate(135 12 12)"/>
+        </g>
+      </svg>
+    </button>
+  </div>
+</div>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="cv"></canvas>
+  </div>
+  <div class="controls">
+    <div class="side"></div>
+    <div class="center">
+      <button class="dir" id="left" aria-label="왼쪽으로 조준">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 5 L7 12 L16 19 Z" fill="#fff" stroke="#fff" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/></svg>
+      </button>
+      <button class="dir" id="right" aria-label="오른쪽으로 조준">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M8 5 L17 12 L8 19 Z" fill="#fff" stroke="#fff" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="side right"></div>
+    <div id="ctrldim"></div>
+  </div>
+  <div class="overlay" id="overlay">
+    <h2 id="ov-title">Game Over</h2>
+    <div class="big" id="ov-sub">The bubbles reached the line.</div>
+    <div class="scoreline"><span id="ov-scoreword">Score</span> <b id="ov-score">0</b></div>
+    <div id="lbNameRow" class="lbname" style="display:none">
+      <input id="nameInput" maxlength="12" placeholder="Name" autocomplete="off">
+      <button class="btn" id="nameSubmit">OK</button>
+    </div>
+    <h3 id="lbHead" class="lbhead">Ranking</h3>
+    <ol id="lbList" class="lb"></ol>
+    <div id="lbNote" class="lbnote"></div>
+    <div class="ovbtns">
+      <button class="btn" id="restart">Retry</button>
+      <button class="btn ghost" id="toLobby">Lobby</button>
+    </div>
+  </div>
+  <div class="overlay menu" id="stageClear">
+    <h2 id="scTitle">Stage Clear!</h2>
+    <div class="big" id="scSub"></div>
+    <div class="scstats">
+      <div class="scrow"><span id="scT_time">Time</span><b id="scV_time">0:00</b></div>
+      <div class="scrow"><span id="scT_shots">Shots</span><b id="scV_shots">0</b></div>
+      <div class="scrow"><span id="scT_combo">Best Combo</span><b id="scV_combo">×0</b></div>
+      <div class="scrow"><span id="scT_rb">Rainbow</span><b id="scV_rb">0</b></div>
+      <div class="scrow"><span id="scT_fz">Freeze</span><b id="scV_fz">0</b></div>
+      <div class="scrow"><span id="scT_score">Stage Score</span><b id="scV_score">0</b></div>
+    </div>
+    <div class="scbtns">
+      <button class="btn wide" id="scNext">Next Stage</button>
+      <button class="btn wide ghost" id="scQuit">Quit</button>
+    </div>
+  </div>
+  <div class="overlay" id="startScreen">
+    <h2 class="brand" id="brand">Bubble Shooter</h2>
+    <button class="btn wide" id="startBtn">Start Game</button>
+    <button class="btn wide ghost" id="lobbyRank">Ranking</button>
+    <button class="btn wide ghost" id="toHub">Game List</button>
+    <button class="btn wide ghost" id="lobbyQuit">Quit Game</button>
+  </div>
+  <div class="overlay menu" id="settingsPanel">
+    <h2 id="set-title">Settings</h2>
+    <button class="btn wide" id="mResume">Resume</button>
+    <div class="setcat" id="catGeneral">General</div>
+    <button class="btn wide ghost" id="mBgm">Music: On</button>
+    <button class="btn wide ghost" id="mSfx">Sound FX: On</button>
+    <button class="btn wide ghost" id="mLang">Language: English</button>
+    <button class="btn wide ghost" id="mName">Change Name</button>
+    <div class="setcat" id="catDisplay">Display</div>
+    <button class="btn wide ghost" id="mFs">Fullscreen</button>
+    <div class="setrow"><span id="mBgLabel">Background</span><input type="color" id="bgpick" value="#ece3d0"></div>
+    <div class="setrow"><span id="mLnLabel">Launcher</span><input type="color" id="lpick" value="#3a3f4a"></div>
+    <div class="setcat" id="catGame">Game</div>
+    <button class="btn wide ghost" id="mRestart">Restart</button>
+    <button class="btn wide ghost" id="mHub">Game List</button>
+    <button class="btn wide ghost" id="mQuit">Quit</button>
+  </div>
+  <div class="overlay menu" id="rankPanel">
+    <h2 id="rankHead">Ranking</h2>
+    <ol id="rankList" class="lb"></ol>
+    <div id="rankNote" class="lbnote"></div>
+    <button class="btn wide" id="rankBack">Back</button>
+  </div>
+  <div class="overlay menu" id="namePanel">
+    <h2 id="nameTitle">Change Name</h2>
+    <div class="lbname">
+      <input id="nameEdit" maxlength="12" placeholder="Name" autocomplete="off">
+      <button class="btn" id="nameSave">Save</button>
+    </div>
+    <button class="btn wide" id="nameBack">Back</button>
+  </div>
+  <div class="overlay menu" id="langPanel">
+    <h2 id="lang-title">Language</h2>
+    <button class="btn wide ghost" data-lang="en">English</button>
+    <button class="btn wide ghost" data-lang="ja">日本語</button>
+    <button class="btn wide ghost" data-lang="ko">한국어</button>
+    <button class="btn wide" id="langBack">Back</button>
+  </div>
+</div>
+
+<script>
+(()=>{
+  "use strict";
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const $score = document.getElementById('score');
+  const $level = document.getElementById('level');
+  const overlay = document.getElementById('overlay');
+  const $ovTitle = document.getElementById('ov-title');
+  const $ovSub = document.getElementById('ov-sub');
+  const $ovScore = document.getElementById('ov-score');
+
+  // ---- Palette: 빨 주 노 초 파 남 보 (flat solids) ----
+  const COLORS = ['#e5484d','#f0801a','#f2c416','#39ad5e','#3b82f6','#3a45b0','#8e44d0'];
+  // playable-color order: high-contrast four first (red, yellow, green, blue), then the rest
+  const COLOR_ORDER = [0,2,3,4, 1,6,5];
+  let bgColor = '#ece3d0';
+  let launcherColor = '#3a3f4a';
+
+  // ===== Online leaderboard (Supabase) =====
+  // Fill these two from Supabase → Project Settings → API. Leave blank to disable the leaderboard.
+  const SUPABASE_URL = 'https://gwiyhnpgjljouawgkgxo.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_lP8SyAG9uyXO-XdTm30qcQ_--jx_ggi';
+  function lbOn(){ return !!(SUPABASE_URL && SUPABASE_KEY); }
+  function lbHeaders(){ return { 'apikey':SUPABASE_KEY }; }
+  function getName(){ try{ return localStorage.getItem('bs_name')||''; }catch(e){ return ''; } }
+  function setStoredName(n){ try{ localStorage.setItem('bs_name', n); }catch(e){} }
+  async function lbSubmit(name, sc){
+    if(!lbOn()) return;
+    try{
+      await fetch(SUPABASE_URL+'/rest/v1/scores', { method:'POST',
+        headers:{ ...lbHeaders(), 'Content-Type':'application/json', 'Prefer':'return=minimal' },
+        body: JSON.stringify({ name:String(name).slice(0,12), score:Math.max(0,Math.floor(sc)) }) });
+    }catch(e){}
+  }
+  async function lbTop(){
+    if(!lbOn()) return [];
+    try{
+      const res=await fetch(SUPABASE_URL+'/rest/v1/scores?select=name,score&order=score.desc&limit=10', { headers:lbHeaders() });
+      return res.ok ? await res.json() : [];
+    }catch(e){ return []; }
+  }
+  // local (this-device) fallback so the whole flow works before Supabase keys are added
+  function localSubmit(name, sc){
+    try{ const a=JSON.parse(localStorage.getItem('bs_scores')||'[]');
+      a.push({ name:String(name).slice(0,12), score:Math.max(0,Math.floor(sc)) });
+      a.sort((x,y)=>y.score-x.score);
+      localStorage.setItem('bs_scores', JSON.stringify(a.slice(0,50)));
+    }catch(e){}
+  }
+  function localTop(){ try{ return JSON.parse(localStorage.getItem('bs_scores')||'[]').slice(0,10); }catch(e){ return []; } }
+  // storage router: online when configured, else local
+  async function storeSubmit(name, sc){ return lbOn() ? lbSubmit(name, sc) : localSubmit(name, sc); }
+  async function storeTop(){ return lbOn() ? lbTop() : localTop(); }
+  function renderInto(list, rows, myName, myScore){
+    if(!list) return; list.innerHTML='';
+    if(!rows || !rows.length){ const li=document.createElement('li'); li.className='empty';
+      li.textContent=t('noScores'); list.appendChild(li); return; }
+    let markedCurrent=false;
+    rows.forEach((row,i)=>{
+      const li=document.createElement('li');
+      const mine = row.name===myName;
+      const isCurrent = mine && !markedCurrent && myScore!=null && Number(row.score)===Number(myScore);
+      if(isCurrent){ li.className='me current'; markedCurrent=true; }
+      else if(mine){ li.className='me'; }
+      const rk=document.createElement('span'); rk.className='rk'; rk.textContent=(i+1);
+      const nm=document.createElement('span'); nm.className='nm'; nm.textContent=row.name;
+      const sc=document.createElement('span'); sc.className='sc'; sc.textContent=row.score;
+      li.append(rk,nm,sc); list.appendChild(li);
+    });
+  }
+  function renderLb(rows, myName, myScore){ renderInto(document.getElementById('lbList'), rows, myName, myScore); }
+  async function lbSubmitAndShow(name){ if(score>0) await storeSubmit(name, score); renderLb(await storeTop(), name, score); }
+  function setupLeaderboard(){
+    const nameRow=document.getElementById('lbNameRow'), list=document.getElementById('lbList');
+    const note=document.getElementById('lbNote'); if(note) note.textContent = lbOn()? t('rankOnline') : t('rankLocal');
+    const head=document.getElementById('lbHead'); if(head) head.textContent = t('ranking');
+    const nm=getName();
+    if(nm){ if(nameRow) nameRow.style.display='none'; lbSubmitAndShow(nm); }
+    else { if(nameRow) nameRow.style.display='flex'; if(list) list.innerHTML=''; const ni=document.getElementById('nameInput'); if(ni) ni.value=''; }
+  }
+  // ---- Ranking panel (viewable any time) ----
+  let rankWasPlaying=false;
+  function hideAllPanels(){
+    document.getElementById('settingsPanel').classList.remove('show');
+    document.getElementById('rankPanel').classList.remove('show');
+    document.getElementById('langPanel').classList.remove('show');
+    document.getElementById('namePanel').classList.remove('show');
+  }
+  async function openRank(){
+    hideAllPanels();
+    const panel=document.getElementById('rankPanel');
+    rankWasPlaying = (state==='play');
+    if(rankWasPlaying){ paused=true; rotDir=0; }
+    document.getElementById('rankHead').textContent=t('ranking');
+    document.getElementById('rankNote').textContent = lbOn()? t('rankOnline') : t('rankLocal');
+    const listEl=document.getElementById('rankList');
+    listEl.innerHTML=''; const li=document.createElement('li'); li.className='empty'; li.textContent='…'; listEl.appendChild(li);
+    panel.classList.add('show');
+    const rows = await storeTop();
+    renderInto(listEl, rows, getName());
+  }
+  function closeRank(){ document.getElementById('rankPanel').classList.remove('show'); if(rankWasPlaying) paused=false; rankWasPlaying=false; }
+
+  // ---- i18n (default English) ----
+  let lang='en';
+  const I18N={
+    en:{ title:'Bubble Shooter', start:'Start', gameOver:'Game Over',
+      gameOverSub:'The bubbles reached the line.', score:'Score', retry:'Retry',
+      settings:'Settings', resume:'Resume', sound:'Sound', restart:'Restart', quit:'Quit',
+      language:'Language', langName:'English', back:'Back', on:'On', off:'Off',
+      scoreLbl:'SCORE', levelLbl:'STAGE', comboLbl:'COMBO', skill:'SKILL', ready:'READY', swap:'SWAP', combo:'COMBO', stage:'Stage', fire:'FIRE', background:'Background', launcher:'Launcher', name:'Name', skRainbow:'Rainbow', skFreeze:'Freeze', ranking:'Ranking', rankOnline:'Online ranking', rankLocal:'Local (this device)', noScores:'No scores yet', ended:'Game Ended', fullscreen:'Fullscreen', fullscreenExit:'Exit fullscreen', catGeneral:'General', catDisplay:'Display', catGame:'Game', bgm:'Music', sfx:'Sound FX', stageClear:'Stage Clear!', nextStage:'Next Stage', lobby:'Lobby', quitGame:'Quit Game', startGame:'Start Game', statTime:'Time', statShots:'Shots', statCombo:'Best Combo', statSkill:'Skills Used', statScore:'Stage Score', changeName:'Change Name', save:'Save', hub:'Game List' },
+    ja:{ title:'バブルシューター', start:'スタート', gameOver:'ゲームオーバー',
+      gameOverSub:'ボールが底のラインに達しました。', score:'スコア', retry:'もう一度',
+      settings:'設定', resume:'再開', sound:'サウンド', restart:'リスタート', quit:'終了',
+      language:'言語', langName:'日本語', back:'戻る', on:'オン', off:'オフ',
+      scoreLbl:'スコア', levelLbl:'ステージ', comboLbl:'コンボ', skill:'スキル', ready:'READY', swap:'交換', combo:'コンボ', stage:'ステージ', fire:'発射', background:'背景', launcher:'発射台', name:'名前', skRainbow:'レインボー', skFreeze:'時間停止', ranking:'ランキング', rankOnline:'オンラインランキング', rankLocal:'ローカル（この端末）', noScores:'記録なし', ended:'ゲーム終了', fullscreen:'全画面', fullscreenExit:'全画面を終了', catGeneral:'一般', catDisplay:'表示', catGame:'ゲーム', bgm:'音楽', sfx:'効果音', stageClear:'ステージクリア！', nextStage:'次のステージ', lobby:'ロビー', quitGame:'ゲーム終了', startGame:'ゲーム開始', statTime:'タイム', statShots:'発射数', statCombo:'最大コンボ', statSkill:'スキル使用', statScore:'獲得スコア', changeName:'名前を変更', save:'保存', hub:'ゲーム一覧' },
+    ko:{ title:'버블 슈터', start:'시작하기', gameOver:'게임 오버',
+      gameOverSub:'구슬이 바닥선에 닿았어요.', score:'점수', retry:'다시 하기',
+      settings:'설정', resume:'게임 재개', sound:'사운드', restart:'게임 재시작', quit:'게임 나가기',
+      language:'언어', langName:'한국어', back:'뒤로', on:'켜짐', off:'꺼짐',
+      scoreLbl:'점수', levelLbl:'스테이지', comboLbl:'콤보', skill:'스킬', ready:'READY', swap:'변경', combo:'콤보', stage:'스테이지', fire:'발사', background:'배경', launcher:'발사대', name:'이름', skRainbow:'무지개', skFreeze:'시간정지', ranking:'랭킹', rankOnline:'온라인 랭킹', rankLocal:'로컬(이 기기)', noScores:'기록 없음', ended:'게임 종료', fullscreen:'전체화면', fullscreenExit:'전체화면 종료', catGeneral:'일반', catDisplay:'화면', catGame:'게임', bgm:'배경음악', sfx:'효과음', stageClear:'스테이지 클리어!', nextStage:'다음 스테이지', lobby:'로비', quitGame:'게임 종료', startGame:'게임 시작', statTime:'플레이 타임', statShots:'발사 수', statCombo:'최고 콤보', statSkill:'스킬 사용', statScore:'획득 점수', changeName:'이름 변경', save:'저장', hub:'게임 목록' },
+  };
+  function t(k){ return (I18N[lang]&&I18N[lang][k]) || I18N.en[k] || k; }
+  function setText(id,txt){ const e=document.getElementById(id); if(e) e.textContent=txt; }
+  function updateSoundLabel(){
+    setText('mBgm', t('bgm')+': '+(bgmOn?t('on'):t('off')));
+    setText('mSfx', t('sfx')+': '+(sfxOn?t('on'):t('off')));
+  }
+  function applyLang(){
+    setText('brand',t('title')); setText('startBtn',t('startGame'));
+    setText('lobbyRank',t('ranking')); setText('lobbyQuit',t('quitGame'));
+    setText('toHub',t('hub')); setText('mHub',t('hub'));
+    setText('toLobby',t('lobby'));
+    setText('scTitle',t('stageClear')); setText('scNext',t('nextStage')); setText('scQuit',t('quit'));
+    setText('scT_time',t('statTime')); setText('scT_shots',t('statShots')); setText('scT_combo',t('statCombo'));
+    setText('scT_rb',t('skRainbow')); setText('scT_fz',t('skFreeze')); setText('scT_score',t('statScore'));
+    setText('ov-title',t('gameOver')); setText('ov-sub',t('gameOverSub'));
+    setText('ov-scoreword',t('score')); setText('restart',t('retry'));
+    setText('set-title',t('settings')); setText('mResume',t('resume'));
+    setText('mRestart',t('restart')); setText('mQuit',t('quit'));
+    setText('mLang',t('language')+': '+t('langName'));
+    setText('mName',t('changeName'));
+    setText('nameTitle',t('changeName')); setText('nameSave',t('save')); setText('nameBack',t('back'));
+    { const ne=document.getElementById('nameEdit'); if(ne) ne.placeholder=t('name'); }
+    setText('lang-title',t('language')); setText('langBack',t('back'));
+    setText('score-lbl',t('scoreLbl')); setText('level-lbl',t('levelLbl')); setText('combo-lbl',t('comboLbl'));
+    setText('fire',t('fire')); setText('mBgLabel',t('background')); setText('mLnLabel',t('launcher'));
+    { const ni=document.getElementById('nameInput'); if(ni) ni.placeholder=t('name'); }
+    { const h=document.getElementById('lbHead'); if(h) h.textContent=t('ranking');
+      const nt=document.getElementById('lbNote'); if(nt) nt.textContent = lbOn()? t('rankOnline') : t('rankLocal'); }
+    setText('rankHead',t('ranking')); setText('rankBack',t('back'));
+    setText('catGeneral',t('catGeneral')); setText('catDisplay',t('catDisplay')); setText('catGame',t('catGame'));
+    { const fb=document.getElementById('mFs'); if(fb) fb.textContent = (document.fullscreenElement||document.webkitFullscreenElement) ? t('fullscreenExit') : t('fullscreen'); }
+    updateSoundLabel(); updateGauge();
+  }
+
+  // ---- Audio (procedural; no external files) ----
+  let actx=null, master=null, sfx=null, music=null, musicTimer=null;
+  let sfxOn=true, bgmOn=true, bgmActive=false, audioReady=false;
+  function applyBgm(){ if(audioReady) music.gain.setTargetAtTime((bgmOn&&bgmActive)?0.14:0, actx.currentTime, 0.4); }
+  function ensureAudio(){
+    if(audioReady){ if(actx.state==='suspended') actx.resume(); return; }
+    const AC = window.AudioContext||window.webkitAudioContext;
+    if(!AC) return;
+    actx = new AC();
+    master = actx.createGain(); master.gain.value = 1; master.connect(actx.destination);
+    sfx = actx.createGain(); sfx.gain.value = sfxOn?0.9:0; sfx.connect(master);
+    music = actx.createGain(); music.gain.value=0.0001; music.connect(master);
+    audioReady=true;
+    startMusic();
+    applyBgm();
+  }
+  // Water-droplet effect: sine with a quick upward pitch sweep + fast decay
+  function drop(f, dur, vol, when, rise){
+    if(!audioReady || !sfxOn) return;
+    const t=actx.currentTime+(when||0);
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type='sine';
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(f*(rise||2.0), t+dur*0.6);
+    o.connect(g); g.connect(sfx);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(vol, t+0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    o.start(t); o.stop(t+dur+0.03);
+  }
+  const PENT=[523.25,587.33,659.25,783.99,880.00,1046.50,1174.66];
+  function sShoot(){ drop(430,0.12,0.16,0,2.1); }
+  function sStick(){ drop(300,0.10,0.13,0,1.7); }
+  function sPop(n){
+    const k=Math.min(n,PENT.length);
+    for(let i=0;i<k;i++) drop(PENT[i],0.16,0.17,i*0.05,1.9);
+  }
+  function sFloat(){ for(let i=0;i<4;i++) drop(820/(1+i*0.22),0.18,0.12,i*0.06,1.6); }
+  function sClear(){ [523.25,659.25,783.99,1046.50].forEach((f,i)=>drop(f,0.22,0.2,i*0.1,1.8)); }
+  function sOver(){ [523.25,440,349.23,261.63].forEach((f,i)=>drop(f,0.3,0.15,i*0.14,1.4)); }
+  // short soft tick repeated while turning => "도로로로" rolling sound
+  function sRoll(){
+    if(!audioReady || !sfxOn) return;
+    const t=actx.currentTime;
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type='sine';
+    o.frequency.setValueAtTime(360 + (aimAngle/MAX_ANGLE)*150 + (Math.random()*16-8), t);
+    o.connect(g); g.connect(sfx);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.07, t+0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.05);
+    o.start(t); o.stop(t+0.07);
+  }
+  function sReady(){ drop(880,0.16,0.18,0,1.5); drop(1320,0.2,0.16,0.08,1.4); }
+  function sTick(go){ drop(go?988:523.25, 0.14, 0.17, 0, 1.25); }
+  function sRainbow(){ [523.25,659.25,783.99,1046.5,1318.5].forEach((f,i)=>drop(f,0.24,0.2,i*0.05,1.6)); }
+  function vibrate(ms){ if(navigator.vibrate){ try{ navigator.vibrate(ms); }catch(e){} } }
+
+  // Relaxed bossa-nova looping BGM via lookahead scheduler (same sine bass + triangle voices)
+  function startMusic(){
+    const bpm=80, beat=60/bpm, eighth=beat/2;
+    // I – vi – ii – V with jazzy 7th voicings, one chord per bar
+    const chords=[
+      {lo:130.81, fi:196.00, voi:[329.63,392.00,493.88]}, // Cmaj7  (E G B)
+      {lo:110.00, fi:164.81, voi:[261.63,329.63,392.00]}, // Am7    (C E G)
+      {lo:146.83, fi:220.00, voi:[349.23,440.00,523.25]}, // Dm7    (F A C)
+      {lo:98.00,  fi:146.83, voi:[246.94,293.66,349.23,415.30]}, // G7♭9 (B D F A♭) — jazzy dominant
+    ];
+    const comp=[0,3,6];                 // syncopated bossa comping (eighth grid)
+    let next=actx.currentTime+0.15, step=0;
+    function mnote(freq,t,dur,type,vol,atk){
+      const o=actx.createOscillator(), g=actx.createGain();
+      o.type=type; o.frequency.setValueAtTime(freq,t);
+      o.connect(g); g.connect(music);
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(vol,t+(atk||0.02));
+      g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+      o.start(t); o.stop(t+dur+0.05);
+    }
+    function tick(){
+      if(!audioReady) return;
+      while(next < actx.currentTime + 0.3){
+        const bar=Math.floor(step/8)%chords.length, pos=step%8, ch=chords[bar];
+        if(pos===0)      mnote(ch.lo, next, beat*1.7, 'sine', 0.6, 0.03);   // root on beat 1
+        else if(pos===4) mnote(ch.fi, next, beat*1.7, 'sine', 0.55, 0.03);  // fifth on beat 3
+        if(comp.indexOf(pos)>=0){                                           // soft syncopated comping
+          for(const f of ch.voi) mnote(f, next, eighth*1.6, 'triangle', 0.16, 0.03);
+        }
+        step++; next+=eighth;
+      }
+    }
+    clearInterval(musicTimer); musicTimer=setInterval(tick,60);
+  }
+  function toggleBgm(){
+    bgmOn=!bgmOn; ensureAudio(); applyBgm();
+    updateSoundLabel();
+  }
+  function toggleSfx(){
+    sfxOn=!sfxOn; ensureAudio();
+    if(audioReady) sfx.gain.setTargetAtTime(sfxOn?0.9:0, actx.currentTime, 0.05);
+    updateSoundLabel();
+  }
+
+  // ---- Geometry (set on init) ----
+  let DPR=1, W=0, H=0, COLS=8, d=0, r=0, ROW_H=0;
+  const CEIL = 2;
+  let shooterX=0, shooterY=0, deathLineY=0;
+  let BULLET_SPEED=900;
+
+  // ---- State ----
+  let grid=[];            // grid[row] = array of (null | {color})
+  let topParity=0;        // parity of top row
+  let descendOffset=0;    // accumulated descent in px
+  // discrete-drop timing — interval is set per stage from the rule table below
+  let dropInterval=44;    // seconds between drops (each drop = half a bubble)
+  let dropTimer=44;       // countdown to next drop
+  let dropPhase='wait';   // 'wait' | 'shiver'
+  let shiverTime=0;       // remaining shiver duration
+  const SHIVER_DUR=0.45;  // how long the tremble lasts
+  // === Descent rules (per stage) ===
+  // Rows dropped each descent: 1 row on stage 1, +1 row every 5 stages.
+  function rowsPerDrop(st){ return 1 + Math.floor((st-1)/5); }
+  // Seconds between descents: starts at DROP_START and shortens DROP_STEP each stage (floored at DROP_MIN).
+  // Constant within a stage; strictly decreasing as stages rise.
+  const DROP_START=72, DROP_STEP=4, DROP_MIN=20;
+  function descentInterval(st){ return Math.max(DROP_MIN, DROP_START - (st-1)*DROP_STEP); }
+  // stage intro: show "Stage N" then a 3s countdown before play resumes
+  let stageIntro=0;       // seconds left in the intro (0 = playing)
+  const INTRO_BANNER=1.4; // title shows this long, then 3..2..1
+  function startStageIntro(){ stageIntro = INTRO_BANNER + 3; }
+  function playing(){ return state==='play' && !paused && stageIntro<=0; }
+  // clock skill: freeze the descent for a while. Charged by its own gauge (fills only after the rainbow gauge is full).
+  let freezeTimer=0;      // seconds of descent-freeze remaining
+  let clockGauge=0;       // 0..GAUGE_MAX charge for the freeze skill
+  let wasClockFull=false; // edge for the ready "ding"
+  const FREEZE_DUR=20;    // descent stays put this long
+  let score=0, level=1, state='play';
+  let paused=false;       // settings/start overlay open
+  let combo=0;            // consecutive clearing shots landed within the combo window
+  let comboTimer=0;       // seconds left to keep the chain alive
+  let shotCleared=0;      // bubbles removed by the shot being resolved
+  let turnFloated=0;      // bubbles dropped (by disconnection) during the current shot
+  let comboFlash=0;       // brief visual pulse when a drop scores
+  let comboExit=0;        // slide-out timer when the chain ends
+  let comboExitLabel='';  // label captured at chain end
+  let lastGain=0;         // points from the last combo award (for the flash)
+  const FALL_BASE=20;     // each cleared bubble is worth 2x a matched pop (10)
+  const COMBO_WINDOW=6.0; // must clear again within this many seconds to extend the chain
+  const COMBO_GAUGE=6;    // gauge added per combo level (on top of size-based gain) — fills fast
+  let clearFlash=0;       // "fantastic!" celebration timer
+  let gauge=0;                 // skill gauge 0..GAUGE_MAX
+  const GAUGE_MAX=100;
+  const G_MIN=3;               // min bubbles cleared in one shot to earn gauge
+  const G_SCALE=2;             // magnitude tuning
+  // one place to change the curve. excess grows from 3 up; squared = big clears pay off much more.
+  function gaugeGain(n){ if(n<G_MIN) return 0; const x=n-(G_MIN-1); return G_SCALE*x*x; }
+  let armed=false;             // rainbow bubble armed on the loaded shot
+  let wasFull=false;           // gauge-full edge detection (for the "ding")
+  let shake=0, flash=0;        // screen shake seconds / white flash alpha
+  let ripples=[];              // color-wave rings {x,y,age,life,max,col}
+  let uiTs=0;
+  let shotsFired=0;       // aim guide shows only for the first few (tutorial) shots
+  const TUTORIAL_SHOTS=3;
+  // per-stage play stats (for the stage-clear summary)
+  let stageTime=0, stageShots=0, stageMaxCombo=0, stageRainbow=0, stageFreeze=0, stageScoreStart=0;
+  function resetStageStats(){ stageTime=0; stageShots=0; stageMaxCombo=0; stageRainbow=0; stageFreeze=0; stageScoreStart=score; }
+  let bullet=null;        // {x,y,vx,vy,color}
+  let curColor=0;         // loaded bubble
+  let queue=[];           // up to 3 waiting bubbles
+  let aimAngle=0;         // radians from vertical, + = right
+  let rotDir=0;           // -1 left, +1 right (from held buttons)
+  let rotTickAccum=0;     // drives the rolling aim sound
+  const ROT_SPEED=0.95;   // rad per second while a direction button is held
+  let particles=[], falling=[];
+  let lastT=0;
+  const MAX_ANGLE = 1.37;
+  function countDrop(){}   // (skills removed)
+
+  function offset(i){ return ((i + topParity) & 1); }            // 1 = shifted right by r
+  function rowLen(i){ return offset(i) ? COLS-1 : COLS; }
+  function cellX(i,c){ return c*d + r + (offset(i) ? r : 0); }
+  function cellY(i){ return CEIL + descendOffset + r + i*ROW_H; }
+  function inRow(i,c){ return c>=0 && c<rowLen(i); }
+  function getCell(i,c){
+    if(i<0 || i>=grid.length || !inRow(i,c)) return null;
+    return grid[i][c];
+  }
+  function ensureRow(i){
+    while(grid.length<=i) grid.push(new Array(rowLen(grid.length)).fill(null));
+  }
+  function neighbors(i,c){
+    const out=[[i,c-1],[i,c+1]];
+    if(offset(i)){ out.push([i-1,c],[i-1,c+1],[i+1,c],[i+1,c+1]); }
+    else        { out.push([i-1,c-1],[i-1,c],[i+1,c-1],[i+1,c]); }
+    return out;
+  }
+
+  function init(){
+    DPR = Math.min(window.devicePixelRatio||1, 2);
+    const stage = document.querySelector('.stage');
+    COLS = 11;
+    W = Math.max(stage.clientWidth, 200); d = W/COLS; r = d/2; ROW_H = d*0.866;
+    H = Math.max(stage.clientHeight, 360);
+    cv.width = Math.round(W*DPR); cv.height = Math.round(H*DPR);
+    cv.style.width = W+'px'; cv.style.height = H+'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    shooterX = W/2; shooterY = H - 52;
+    deathLineY = shooterY - r - 22;
+    BULLET_SPEED = Math.max(820, H*1.9);
+  }
+
+  function colorsOnBoard(){
+    const set=new Set();
+    for(const row of grid) for(const cell of row) if(cell) set.add(cell.color);
+    return [...set];
+  }
+  // one place to manage difficulty: how many colors are in play at a given level.
+  // L1-2: 4 colors, L3-4: 5, L5-6: 6, L7+: 7 — grows two levels at a time.
+  function paletteSize(){ return Math.min(7, 4 + Math.floor((level-1)/2)); }
+  function activePalette(){ return COLOR_ORDER.slice(0, paletteSize()); }
+  function randColor(){ const p=activePalette(); return p[(Math.random()*p.length)|0]; }
+  function pickColor(){
+    const on = colorsOnBoard();
+    if(on.length) return on[(Math.random()*on.length)|0];
+    return randColor();
+  }
+
+  function spawnTopRow(){
+    topParity ^= 1;
+    const len = rowLen(0);
+    const row = new Array(len);
+    for(let c=0;c<len;c++) row[c] = {color: randColor()};
+    grid.unshift(row);
+  }
+
+  function newGame(){
+    grid=[]; topParity=0; descendOffset=0; score=0; level=1; state='play';
+    bullet=null; particles=[]; falling=[]; rotDir=0; aimAngle=0;
+    combo=0; comboTimer=0; comboExit=0; shotCleared=0; turnFloated=0; comboFlash=0; clearFlash=0; shotsFired=0; gauge=0;
+    armed=false; wasFull=false; shake=0; flash=0; ripples=[];
+    freezeTimer=0; clockGauge=0; wasClockFull=false;
+    $score.textContent='0'; $level.textContent='1';
+    document.getElementById('combopill').style.display='none';
+    overlay.classList.remove('show');
+    document.getElementById('stageClear').classList.remove('show');
+    resetStageStats();
+    const startRows=3;
+    for(let i=0;i<startRows;i++){
+      const len = rowLen(i);
+      const row=new Array(len);
+      for(let c=0;c<len;c++) row[c]={color: randColor()};
+      grid.push(row);
+    }
+    dropInterval=descentInterval(level); dropTimer=dropInterval; dropPhase='wait'; shiverTime=0;
+    curColor = pickColor();
+    queue = [pickColor(), pickColor(), pickColor()];
+    startStageIntro();
+    updateGauge();
+    paused=false;
+    bgmActive=true; applyBgm();
+  }
+
+  // ---- Shooting ----
+  function shoot(){
+    if(bullet || !playing()) return;
+    const a = aimAngle;
+    const rainbow = armed; armed=false;
+    bullet = { x:shooterX, y:shooterY, vx:Math.sin(a)*BULLET_SPEED, vy:-Math.cos(a)*BULLET_SPEED,
+               color:curColor, rainbow, scale: rainbow?0.62:1, trail:[] };
+    curColor = queue.shift();
+    queue.push(pickColor());
+    shotsFired++; stageShots++;
+    sShoot();
+  }
+  function armRainbow(){
+    if(gauge<GAUGE_MAX || !playing() || armed || bullet) return;
+    armed=true; gauge=0; updateGauge(); stageRainbow++;
+    flash=0.55; shake=0.22; vibrate(30); sRainbow();
+  }
+
+  // ---- Bullet stepping & collision ----
+  function updateBullet(dt){
+    if(!bullet) return;
+    const brad = r*(bullet.scale||1);
+    let remaining = Math.hypot(bullet.vx, bullet.vy)*dt;
+    const step = r*0.5;
+    while(remaining>0 && bullet){
+      const mv = Math.min(step, remaining); remaining-=mv;
+      const inv = 1/Math.hypot(bullet.vx, bullet.vy);   // recompute each step so bounces apply at once
+      bullet.x += bullet.vx*inv*mv; bullet.y += bullet.vy*inv*mv;
+      if(bullet.rainbow){ bullet.trail.push({x:bullet.x,y:bullet.y}); if(bullet.trail.length>14) bullet.trail.shift(); }
+      // walls: force velocity inward (prevents getting pinned and sliding up the wall)
+      if(bullet.x - brad < 0){ bullet.x = brad;   bullet.vx = Math.abs(bullet.vx); }
+      if(bullet.x + brad > W){ bullet.x = W-brad; bullet.vx = -Math.abs(bullet.vx); }
+      // ceiling
+      if(bullet.y - brad <= cellY(0)-r){ snapBullet(null); return; }
+      // collide with bubbles
+      const hit = findHit(brad);
+      if(hit){ snapBullet(hit); return; }
+    }
+  }
+  function findHit(brad){
+    const approx = Math.round((bullet.y - cellY(0))/ROW_H);
+    const thr = (r+brad)*0.92;
+    for(let i=Math.max(0,approx-1); i<=approx+1 && i<grid.length; i++){
+      const len=rowLen(i);
+      for(let c=0;c<len;c++){
+        if(!grid[i][c]) continue;
+        const dx=bullet.x-cellX(i,c), dy=bullet.y-cellY(i);
+        if(dx*dx+dy*dy < thr*thr) return [i,c];
+      }
+    }
+    return null;
+  }
+  function snapBullet(hitCell){
+    const bx=bullet.x, by=bullet.y, color=bullet.color, rainbow=bullet.rainbow;
+    bullet=null;
+    let best=null, bestDist=Infinity;
+    const consider=(i,c)=>{
+      ensureRow(i);
+      if(i<0 || !inRow(i,c) || grid[i][c]) return;
+      const dx=bx-cellX(i,c), dy=by-cellY(i), dd=dx*dx+dy*dy;
+      if(dd<bestDist){ bestDist=dd; best=[i,c]; }
+    };
+    if(hitCell){
+      for(const [ni,nc] of neighbors(hitCell[0],hitCell[1])) consider(ni,nc);
+    } else {
+      const len=rowLen(0);
+      for(let c=0;c<len;c++) consider(0,c);
+    }
+    if(!best){
+      const i=Math.max(0,Math.round((by-cellY(0))/ROW_H));
+      ensureRow(i);
+      const c=Math.round((bx - r - (offset(i)?r:0))/d);
+      consider(i,c); for(const [ni,nc] of neighbors(i,c)) consider(ni,nc);
+    }
+    if(!best){ ensureRow(0); consider(0,0); }
+    if(!best) return;
+    const [pi,pc]=best;
+    ensureRow(pi);
+    if(rainbow){ rainbowBlast(pi,pc); return; }
+    grid[pi][pc]={color};
+    resolve(pi,pc);
+  }
+
+  // Rainbow: clears the full same-color group of every neighbor at once -> big cascade
+  function rainbowBlast(pi,pc){
+    const toRemove=new Set(), colorsHit=new Set();
+    for(const [ni,nc] of neighbors(pi,pc)){
+      const cell=getCell(ni,nc); if(!cell) continue;
+      colorsHit.add(cell.color);
+      const st=[[ni,nc]];
+      while(st.length){ const [a,b]=st.pop(), k=a+','+b;
+        if(toRemove.has(k)) continue; const cc=getCell(a,b);
+        if(!cc || cc.color!==cell.color) continue; toRemove.add(k);
+        for(const [x,y] of neighbors(a,b)) st.push([x,y]); }
+    }
+    if(toRemove.size===0){ grid[pi][pc]={color:pickColor()}; resolve(pi,pc); return; }
+    let popped=0;
+    for(const k of toRemove){ const [a,b]=k.split(',').map(Number);
+      if(grid[a][b]){ countDrop(grid[a][b].color); burst(cellX(a,b),cellY(a,b),grid[a][b].color); grid[a][b]=null; popped++; } }
+    const floated=dropFloating();
+    score += popped*15;                                   // rainbow pops worth more
+    const cleared=popped+floated; shotCleared=cleared;
+    addGauge(gaugeGain(cleared));
+    bigImpact(cellX(pi,pc), cellY(pi,pc), [...colorsHit]);
+    sPop(Math.min(popped,6)); if(floated>0) sFloat();
+    endShot();
+  }
+  function bigImpact(x,y,cols){
+    shake=Math.min(0.5, 0.28 + cols.length*0.05); flash=0.5; vibrate([15,30,15]);
+    for(let i=0;i<cols.length;i++) ripples.push({x,y,age:0,life:0.5,max:W*0.6,col:COLORS[cols[i]]});
+    for(let k=0;k<26;k++){ const a=Math.random()*Math.PI*2, sp=120+Math.random()*260, col=COLORS[cols[(Math.random()*cols.length)|0]];
+      particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:.6+Math.random()*.4,age:0,col,sz:r*0.35*Math.random()+2}); }
+  }
+
+  // ---- Match / float resolution ----
+  function resolve(i,c){
+    const target=grid[i][c].color;
+    const group=[]; const seen=new Set(); const stack=[[i,c]];
+    while(stack.length){
+      const [a,b]=stack.pop(); const key=a+','+b;
+      if(seen.has(key)) continue;
+      const cell=getCell(a,b); if(!cell || cell.color!==target) continue;
+      seen.add(key); group.push([a,b]);
+      for(const [na,nb] of neighbors(a,b)) stack.push([na,nb]);
+    }
+    let popped=0; shotCleared=0;
+    if(group.length>=3){
+      for(const [a,b] of group){ countDrop(grid[a][b].color); burst(cellX(a,b),cellY(a,b),grid[a][b].color); grid[a][b]=null; popped++; }
+      const floated=dropFloating();
+      score += popped*10 + (popped>4?(popped-4)*15:0);   // direct-match points
+      sPop(popped);
+      if(floated>0) sFloat();
+      const cleared=popped+floated; shotCleared=cleared;
+      addGauge(gaugeGain(cleared));   // size-based charge (combo bonus added in finalizeCombo)
+    } else {
+      sStick();
+    }
+    endShot();
+  }
+  // time-based chain: clearing again within COMBO_WINDOW extends the combo; each level pumps the gauge
+  function finalizeCombo(){
+    if(shotCleared>0){
+      combo = (comboTimer>0 ? combo+1 : 1);          // consecutive within the window
+      comboTimer = COMBO_WINDOW;                      // refresh the chain timer
+      lastGain = shotCleared * FALL_BASE * combo;     // score scales with chain length
+      score += lastGain;
+      comboFlash = 1;
+      addClockGauge(COMBO_GAUGE*combo);   // combo charges the clock (freeze) gauge
+      addGauge(COMBO_GAUGE*combo);        // ...and the rainbow gauge too
+      if(combo>stageMaxCombo) stageMaxCombo=combo;
+    }
+    $score.textContent = score;
+    const cp=document.getElementById('combopill');
+    const wasHidden = cp.style.display==='none';
+    updateComboPill();
+    if(shotCleared>0 && combo>=2){
+      if(cp.animate){ try{
+        if(wasHidden) cp.animate([{transform:'translateX(-16px) scale(.7)',opacity:0},{transform:'translateX(0) scale(1)',opacity:1}],{duration:260,easing:'cubic-bezier(.2,1.5,.4,1)'});
+        else cp.animate([{transform:'scale(1.4)'},{transform:'scale(1)'}],{duration:240,easing:'ease-out'});
+      }catch(e){} }
+      const g=document.getElementById('combogain');
+      if(g){ g.textContent='+'+lastGain;
+        if(g.animate){ try{ g.animate([{opacity:0,transform:'translateY(6px)'},{opacity:1,transform:'translateY(0)',offset:.25},{opacity:1,transform:'translateY(0)',offset:.7},{opacity:0,transform:'translateY(-4px)'}],{duration:900,easing:'ease-out'}); }catch(e){} }
+      }
+    }
+  }
+  function updateComboPill(){
+    const cp=document.getElementById('combopill');
+    if(combo>=2){ document.getElementById('combo').textContent='×'+combo; cp.style.display=''; }
+    else cp.style.display='none';
+  }
+  function advanceStage(){
+    level++; $level.textContent=level; descendOffset=0;
+    dropInterval=descentInterval(level);          // next stage's descent speed (rule table)
+    for(let k=0;k<3;k++) spawnTopRow();
+    resetStageStats();
+    startStageIntro();                            // "Stage N" + 3s countdown before play
+  }
+  function fmtTime(s){ s=Math.max(0,Math.floor(s)); const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); }
+  function showStageClear(){
+    paused=true; rotDir=0; bullet=null;
+    setText('scSub', t('stage')+' '+level);
+    setText('scV_time', fmtTime(stageTime));
+    setText('scV_shots', stageShots);
+    setText('scV_combo', '×'+stageMaxCombo);
+    setText('scV_rb', stageRainbow);
+    setText('scV_fz', stageFreeze);
+    setText('scV_score', (score-stageScoreStart));
+    document.getElementById('stageClear').classList.add('show');
+  }
+  function endShot(){
+    finalizeCombo();
+    turnFloated=0;
+    if(boardEmpty()){
+      sClear();
+      showStageClear();                           // ask: next stage or quit
+      return;
+    }
+    checkGameOver();
+  }
+
+  function dropFloating(){
+    const anchored=new Set();
+    const len0=rowLen(0);
+    const stack=[];
+    for(let c=0;c<len0;c++) if(grid[0] && grid[0][c]) stack.push([0,c]);
+    while(stack.length){
+      const [a,b]=stack.pop(); const key=a+','+b;
+      if(anchored.has(key)) continue;
+      if(!getCell(a,b)) continue;
+      anchored.add(key);
+      for(const [na,nb] of neighbors(a,b)) if(getCell(na,nb)) stack.push([na,nb]);
+    }
+    let count=0;
+    for(let i=0;i<grid.length;i++) for(let c=0;c<rowLen(i);c++){
+      if(grid[i][c] && !anchored.has(i+','+c)){
+        countDrop(grid[i][c].color);
+        falling.push({x:cellX(i,c), y:cellY(i), vx:(Math.random()-.5)*60, vy:30, color:grid[i][c].color});
+        grid[i][c]=null; count++;
+      }
+    }
+    turnFloated += count;
+    return count;
+  }
+  function boardEmpty(){
+    for(const row of grid) for(const cell of row) if(cell) return false;
+    return true;
+  }
+  // rainbow gauge fills from bubbles cleared (size); clock gauge fills from combo only
+  function addGauge(n){ if(n>0){ gauge=Math.min(GAUGE_MAX, gauge+n); updateGauge(); } }
+  function addClockGauge(n){ if(n>0){ clockGauge=Math.min(GAUGE_MAX, clockGauge+n); updateGauge(); } }
+  function updateGauge(){
+    const full=gauge>=GAUGE_MAX;
+    if(full && !wasFull){ sReady(); vibrate(20); }        // rainbow ready
+    wasFull=full;
+    const cfull=clockGauge>=GAUGE_MAX;
+    if(cfull && !wasClockFull){ sReady(); vibrate(20); }  // clock ready
+    wasClockFull=cfull;
+  }
+  function checkGameOver(){
+    for(let i=0;i<grid.length;i++) for(let c=0;c<rowLen(i);c++){
+      if(grid[i][c] && cellY(i)+r >= deathLineY){ gameOver(); return; }
+    }
+  }
+  function endGame(quit){
+    if(state==='over') return;
+    state='over'; bullet=null; rotDir=0;
+    hideAllPanels();
+    document.getElementById('stageClear').classList.remove('show');
+    if(!quit) sOver();
+    $ovTitle.textContent = quit ? t('ended') : t('gameOver');
+    $ovSub.textContent = quit ? '' : t('gameOverSub');
+    $ovScore.textContent=score;
+    settingsPanel.classList.remove('show');
+    overlay.classList.add('show');
+    paused=false;
+    setupLeaderboard();
+  }
+  function gameOver(){ endGame(false); }
+
+  // ---- Particles ----
+  function burst(x,y,colorIdx){
+    const col=COLORS[colorIdx];
+    const n=7;
+    for(let k=0;k<n;k++){
+      const a=Math.random()*Math.PI*2, sp=60+Math.random()*160;
+      particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:.5+Math.random()*.3,age:0,col,sz:r*0.3*Math.random()+2});
+    }
+  }
+  function updateFX(dt){
+    for(let i=particles.length-1;i>=0;i--){
+      const p=particles[i]; p.age+=dt;
+      if(p.age>=p.life){ particles.splice(i,1); continue; }
+      p.vy+=420*dt; p.x+=p.vx*dt; p.y+=p.vy*dt;
+    }
+    for(let i=falling.length-1;i>=0;i--){
+      const f=falling[i]; f.vy+=900*dt; f.x+=f.vx*dt; f.y+=f.vy*dt;
+      if(f.y - r > H){ falling.splice(i,1); }
+    }
+    if(comboFlash>0) comboFlash=Math.max(0, comboFlash-dt*3.2);
+    if(comboExit>0) comboExit=Math.max(0, comboExit-dt);
+    if(clearFlash>0) clearFlash=Math.max(0, clearFlash-dt);
+    if(shake>0) shake=Math.max(0, shake-dt);
+    if(flash>0) flash=Math.max(0, flash-dt*2.2);
+    for(let i=ripples.length-1;i>=0;i--){ ripples[i].age+=dt; if(ripples[i].age>=ripples[i].life) ripples.splice(i,1); }
+  }
+
+  // ---- Drawing ----
+  function drawBubble(x,y,colorIdx,rad){
+    ctx.beginPath(); ctx.arc(x,y,rad,0,Math.PI*2);
+    ctx.fillStyle=COLORS[colorIdx]; ctx.fill();
+    ctx.lineWidth=1.5; ctx.strokeStyle='rgba(0,0,0,.22)'; ctx.stroke();
+  }
+  function drawRainbow(x,y,rad,phase){
+    for(let i=0;i<7;i++){
+      const a0=phase + i/7*Math.PI*2, a1=phase + (i+1)/7*Math.PI*2;
+      ctx.beginPath(); ctx.moveTo(x,y); ctx.arc(x,y,rad,a0,a1); ctx.closePath();
+      ctx.fillStyle=COLORS[i]; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(x,y,rad,0,Math.PI*2); ctx.lineWidth=2; ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x-rad*0.3,y-rad*0.32,rad*0.22,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,.6)'; ctx.fill();
+  }
+  function shade(hex,amt){
+    const n=parseInt(hex.slice(1),16);
+    let R=(n>>16)+amt, G=((n>>8)&255)+amt, B=(n&255)+amt;
+    R=Math.max(0,Math.min(255,R)); G=Math.max(0,Math.min(255,G)); B=Math.max(0,Math.min(255,B));
+    return '#'+((1<<24)+(R<<16)+(G<<8)+B).toString(16).slice(1);
+  }
+
+  function draw(ts){
+    uiTs=ts;
+    ctx.clearRect(0,0,W,H);
+    // solid background
+    ctx.fillStyle=bgColor; ctx.fillRect(0,0,W,H);
+
+    // tremble offset while the wall is about to drop
+    let sx=0, sy=0;
+    if(dropPhase==='shiver' && freezeTimer<=0){
+      const m=Math.max(2, r*0.5);
+      sx=(Math.random()*2-1)*m; sy=(Math.random()*2-1)*m*0.7;
+    }
+
+    // ceiling bar
+    ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(0,0,W, CEIL+descendOffset+sy);
+
+    // grid
+    for(let i=0;i<grid.length;i++){ const len=rowLen(i);
+      for(let c=0;c<len;c++) if(grid[i][c]) drawBubble(cellX(i,c)+sx,cellY(i)+sy,grid[i][c].color,r-1);
+    }
+    // falling
+    for(const f of falling) drawBubble(f.x,f.y,f.color,r-1);
+
+    // death line
+    const danger = isDanger();
+    ctx.save();
+    ctx.setLineDash([10,8]); ctx.lineWidth=2;
+    const pulse = danger ? 0.5+0.5*Math.sin(ts/120) : 0.4;
+    ctx.strokeStyle = danger ? `rgba(229,72,77,${pulse})` : 'rgba(255,255,255,.16)';
+    ctx.beginPath(); ctx.moveTo(0,deathLineY); ctx.lineTo(W,deathLineY); ctx.stroke();
+    ctx.restore();
+
+    // color-wave ripples
+    for(const rp of ripples){ const p=rp.age/rp.life;
+      ctx.globalAlpha=(1-p)*0.6; ctx.strokeStyle=rp.col; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.arc(rp.x,rp.y,p*rp.max,0,Math.PI*2); ctx.stroke(); }
+    ctx.globalAlpha=1;
+
+    // particles
+    for(const p of particles){ ctx.globalAlpha=Math.max(0,1-p.age/p.life);
+      ctx.fillStyle=p.col; ctx.beginPath(); ctx.arc(p.x,p.y,p.sz,0,Math.PI*2); ctx.fill(); }
+    ctx.globalAlpha=1;
+
+    // bullet (+ rainbow trail)
+    if(bullet){
+      if(bullet.rainbow){
+        for(let i=0;i<bullet.trail.length;i++){ const tp=bullet.trail[i], a=(i/bullet.trail.length);
+          ctx.globalAlpha=a*0.5; drawBubble(tp.x,tp.y, i%7, (r-1)*(bullet.scale||1)*a); }
+        ctx.globalAlpha=1;
+        drawRainbow(bullet.x,bullet.y,(r-1)*(bullet.scale||1), ts/300);
+      } else drawBubble(bullet.x,bullet.y,bullet.color,r-1);
+    }
+
+    // (combo is shown in the top bar, not drawn on the canvas)
+
+    // shooter
+    drawAim();
+    drawShooter();
+    if(state==='play'){ drawDropClock(); drawSkillGauge(); }
+
+    // "fantastic!" when the board is fully cleared
+    if(clearFlash>0){
+      ctx.save();
+      const a=Math.min(1,clearFlash), sc=1+(2.2-clearFlash)*0.15;
+      ctx.globalAlpha=a; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle='#ffcf4d';
+      ctx.font='bold '+Math.round(40*sc)+'px system-ui,sans-serif';
+      ctx.fillText('fantastic!', W/2, H/2);
+      ctx.restore();
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    }
+
+    // impact flash
+    if(flash>0){ ctx.save(); ctx.globalAlpha=Math.min(1,flash); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H); ctx.restore(); }
+
+    // stage intro: "Stage N" banner, then 3..2..1 countdown
+    if(stageIntro>0){
+      ctx.save();
+      ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(0,0,W,H);
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      if(stageIntro>3){                                  // banner phase
+        const inT=INTRO_BANNER-(stageIntro-3);           // 0 -> INTRO_BANNER
+        ctx.globalAlpha=Math.min(1, inT/0.3);
+        ctx.fillStyle='#ffcf4d';
+        ctx.font='bold '+Math.round(46+Math.min(1,inT/0.3)*4)+'px system-ui,sans-serif';
+        ctx.fillText(t('stage')+' '+level, W/2, H/2);
+      } else {                                           // countdown phase
+        const n=Math.ceil(stageIntro), frac=n-stageIntro; // 0 at each tick start -> 1
+        ctx.globalAlpha=0.7; ctx.fillStyle='#cbd5e1'; ctx.font='600 15px system-ui,sans-serif';
+        ctx.fillText(t('stage')+' '+level, W/2, H/2-58);
+        ctx.globalAlpha=Math.max(0.15,1-frac); ctx.fillStyle='#ffffff';
+        ctx.font='bold '+Math.round(84-frac*26)+'px system-ui,sans-serif';
+        ctx.fillText(n, W/2, H/2+6);
+      }
+      ctx.restore();
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    }
+  }
+  function skillGaugePos(){
+    const clockR=r*1.15, gaugeR=r*1.15;
+    return { x: shooterX/2 - clockR - 10 - gaugeR, y: shooterY, rr: gaugeR };
+  }
+  function drawSkillGauge(){
+    const g=skillGaugePos(), frac=Math.max(0,Math.min(1,gauge/GAUGE_MAX)), full=gauge>=GAUGE_MAX;
+    // face
+    ctx.beginPath(); ctx.arc(g.x,g.y,g.rr,0,Math.PI*2);
+    ctx.fillStyle='#22262f'; ctx.fill();
+    // track ring
+    ctx.beginPath(); ctx.arc(g.x,g.y,g.rr-3,0,Math.PI*2);
+    ctx.lineWidth=4; ctx.strokeStyle='rgba(255,255,255,.14)'; ctx.stroke();
+    // progress arc (from 12 o'clock, clockwise)
+    if(frac>0){
+      ctx.beginPath(); ctx.arc(g.x,g.y,g.rr-3, -Math.PI/2, -Math.PI/2 + frac*Math.PI*2);
+      ctx.lineWidth=4; ctx.lineCap='round'; ctx.strokeStyle= full ? '#ffcf4d' : '#5b8def'; ctx.stroke(); ctx.lineCap='butt';
+    }
+    // glow + pulse when ready
+    if(full){
+      const pulse=0.5+0.5*Math.sin(uiTs/180);
+      ctx.save(); ctx.globalAlpha=0.35+0.4*pulse;
+      ctx.beginPath(); ctx.arc(g.x,g.y,g.rr-3,0,Math.PI*2);
+      ctx.lineWidth=4; ctx.strokeStyle='#ffcf4d'; ctx.stroke(); ctx.restore();
+    }
+    // center star
+    ctx.fillStyle= full ? '#ffcf4d' : 'rgba(255,255,255,.65)';
+    ctx.font='bold '+Math.round(g.rr*0.85)+'px system-ui,sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('★', g.x, g.y+1);
+    // label under the dial
+    ctx.fillStyle='rgba(58,63,74,.72)'; ctx.font='600 '+Math.round(Math.max(10,r*0.42))+'px system-ui,sans-serif';
+    ctx.textBaseline='top'; ctx.fillText(t('skRainbow'), g.x, g.y+g.rr+5);
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  }
+  function dropClockPos(){ return { x: shooterX/2, y: shooterY, rr: r*1.15 }; }
+  function useFreeze(){
+    if(!playing() || freezeTimer>0 || clockGauge<GAUGE_MAX) return;
+    freezeTimer=FREEZE_DUR; clockGauge=0; updateGauge(); sReady(); vibrate(20); stageFreeze++;
+  }
+  function drawDropClock(){
+    const c=dropClockPos(), cx=c.x, cy=c.y, rad=c.rr;
+    const frozen=freezeTimer>0, cfrac=Math.max(0,Math.min(1,clockGauge/GAUGE_MAX)), ready=clockGauge>=GAUGE_MAX;
+    const prog=(dropPhase==='wait')?1-Math.max(0,dropTimer)/dropInterval:1;
+    const warn=!frozen && (dropPhase==='shiver'||prog>0.85);
+    // label under the dial
+    ctx.fillStyle='rgba(58,63,74,.72)'; ctx.font='600 '+Math.round(Math.max(10,r*0.42))+'px system-ui,sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText(t('skFreeze'), cx, cy+rad+5);
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    // face
+    ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2); ctx.fillStyle='#22262f'; ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle= frozen ? '#38bdf8' : 'rgba(255,255,255,.28)'; ctx.stroke();
+    if(frozen){
+      ctx.beginPath(); ctx.arc(cx,cy,rad-3,0,Math.PI*2); ctx.fillStyle='rgba(56,189,248,.25)'; ctx.fill();
+      ctx.fillStyle='#bae6fd'; ctx.font='bold '+Math.round(rad*1.0)+'px system-ui,sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(Math.ceil(freezeTimer), cx, cy+1);
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+      return;
+    }
+    // inner: descent countdown (hand + pie), one revolution = one drop
+    const ir=rad-6, a0=-Math.PI/2, a1=-Math.PI/2 + prog*Math.PI*2;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,ir,a0,a1); ctx.closePath();
+    ctx.fillStyle= warn ? 'rgba(229,72,77,.35)' : 'rgba(91,141,239,.30)'; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(a1)*(ir-1), cy+Math.sin(a1)*(ir-1));
+    ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.strokeStyle= warn ? '#e5484d' : '#5b8def'; ctx.stroke(); ctx.lineCap='butt';
+    ctx.beginPath(); ctx.arc(cx,cy,2.2,0,Math.PI*2); ctx.fillStyle='#dfe6f2'; ctx.fill();
+    // outer ring: freeze-skill gauge (gold), fills only after the rainbow gauge is full
+    const rr=rad-1;
+    ctx.beginPath(); ctx.arc(cx,cy,rr,0,Math.PI*2); ctx.lineWidth=3; ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.stroke();
+    if(cfrac>0){
+      ctx.beginPath(); ctx.arc(cx,cy,rr, -Math.PI/2, -Math.PI/2 + cfrac*Math.PI*2);
+      ctx.lineWidth=3; ctx.lineCap='round'; ctx.strokeStyle= ready ? '#ffcf4d' : '#38bdf8'; ctx.stroke(); ctx.lineCap='butt';
+    }
+    if(ready){
+      const pulse=0.5+0.5*Math.sin(uiTs/180);
+      ctx.save(); ctx.globalAlpha=0.4+0.4*pulse;
+      ctx.beginPath(); ctx.arc(cx,cy,rr,0,Math.PI*2); ctx.lineWidth=3; ctx.strokeStyle='#ffcf4d'; ctx.stroke();
+      ctx.restore();
+    }
+  }
+  function isDanger(){
+    for(let i=0;i<grid.length;i++) for(let c=0;c<rowLen(i);c++)
+      if(grid[i][c] && cellY(i)+r >= deathLineY - ROW_H*1.5) return true;
+    return false;
+  }
+  function drawAim(){
+    if(bullet || !playing() || shotsFired>=TUTORIAL_SHOTS) return;
+    let x=shooterX, y=shooterY, dx=Math.sin(aimAngle), dy=-Math.cos(aimAngle);
+    const step=r*0.5; const dots=[]; let safety=0;
+    while(safety++<700){
+      x+=dx*step; y+=dy*step;
+      if(x-r<0){x=r;dx=Math.abs(dx);} if(x+r>W){x=W-r;dx=-Math.abs(dx);}
+      if(y-r<=cellY(0)-r) break;
+      let hit=false;
+      const approx=Math.round((y-cellY(0))/ROW_H);
+      for(let i=Math.max(0,approx-1);i<=approx+1 && i<grid.length && !hit;i++)
+        for(let c=0;c<rowLen(i);c++){ if(!grid[i][c])continue;
+          const ex=x-cellX(i,c), ey=y-cellY(i);
+          if(ex*ex+ey*ey<(d*0.95)*(d*0.95)){hit=true;break;} }
+      if(hit) break;
+      dots.push([x,y]);
+    }
+    ctx.save();
+    ctx.globalAlpha=0.55; ctx.fillStyle=launcherColor;
+    for(let k=2;k<dots.length;k+=4){ const [px,py]=dots[k];
+      ctx.beginPath(); ctx.arc(px,py,3,0,Math.PI*2); ctx.fill(); }
+    ctx.restore();
+  }
+  function drawShooter(){
+    // base + tap-to-fire ring (tinted to the launcher color)
+    ctx.save();
+    ctx.globalAlpha=0.12; ctx.fillStyle=launcherColor;
+    ctx.beginPath(); ctx.arc(shooterX,shooterY,r+10,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha=0.35; ctx.lineWidth=2; ctx.strokeStyle=launcherColor;
+    ctx.beginPath(); ctx.arc(shooterX,shooterY,r+20,0,Math.PI*2); ctx.stroke();
+    ctx.globalAlpha=1;
+    // aim arrow (points where the bubble will launch)
+    ctx.translate(shooterX,shooterY); ctx.rotate(aimAngle);
+    const base=-(r+8), len=r*2.8+16, tip=base-len;
+    const shaftW=10, headW=7, headLen=20;
+    ctx.strokeStyle=launcherColor; ctx.lineWidth=shaftW; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(0,base); ctx.lineTo(0,tip+headLen*0.75); ctx.stroke();
+    ctx.fillStyle=launcherColor;
+    ctx.beginPath(); ctx.moveTo(0,tip); ctx.lineTo(-headW,tip+headLen); ctx.lineTo(headW,tip+headLen); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    // current bubble (rainbow when armed)
+    if(!bullet && state==='play'){
+      if(armed) drawRainbow(shooterX,shooterY,r-1, uiTs/300);
+      else drawBubble(shooterX,shooterY,curColor,r-1);
+    }
+    ctx.textAlign='center';
+    // waiting queue laid out horizontally on the ground (below the death line), order left-to-right
+    const qr=Math.max(6, r*0.72), qgap=qr*2+6, n=Math.min(3, queue.length);
+    for(let k=0;k<n;k++){
+      ctx.globalAlpha=1-k*0.14;
+      drawBubble(W - qr - 6 - (n-1-k)*qgap, shooterY, queue[k], qr);
+    }
+    ctx.globalAlpha=1;
+    // small swap button, set apart to the right of the cannon (flat/cel look)
+    const sb=swapBtnPos();
+    ctx.beginPath(); ctx.arc(sb.x,sb.y,sb.rr,0,Math.PI*2);
+    ctx.fillStyle='#f2c416'; ctx.fill();
+    ctx.lineWidth=3; ctx.strokeStyle='#a87f0c'; ctx.stroke();
+    ctx.fillStyle='#3a2a00'; ctx.font='bold '+Math.round(sb.rr*1.15)+'px system-ui,sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('⇄', sb.x, sb.y+0.5);
+    ctx.textBaseline='alphabetic'; ctx.textAlign='left';
+  }
+  function swapBtnPos(){
+    const sr=r*0.66;
+    return { x: shooterX + r + sr + 50, y: shooterY, rr: sr };
+  }
+  function roundRect(x,y,w,h,rad){
+    ctx.beginPath();
+    ctx.moveTo(x+rad,y); ctx.arcTo(x+w,y,x+w,y+h,rad); ctx.arcTo(x+w,y+h,x,y+h,rad);
+    ctx.arcTo(x,y+h,x,y,rad); ctx.arcTo(x,y,x+w,y,rad); ctx.closePath();
+  }
+
+  // ---- Loop ----
+  function frame(ts){
+    if(!lastT) lastT=ts;
+    let dt=(ts-lastT)/1000; lastT=ts; if(dt>0.05) dt=0.05;
+    if(state==='play' && !paused && stageIntro>0){
+      const prev=stageIntro; stageIntro=Math.max(0, stageIntro-dt);
+      if(stageIntro>0 && stageIntro<=3 && Math.ceil(prev)!==Math.ceil(stageIntro)) sTick(false); // 3..2..1
+      if(stageIntro===0){ sTick(true); dropPhase='wait'; dropTimer=dropInterval; } // go!
+    }
+    if(playing()){
+      stageTime += dt;
+      if(rotDir){
+        aimAngle += rotDir*ROT_SPEED*dt;
+        let atLimit=false;
+        if(aimAngle> MAX_ANGLE){ aimAngle= MAX_ANGLE; atLimit=(rotDir>0); }
+        if(aimAngle< -MAX_ANGLE){ aimAngle=-MAX_ANGLE; atLimit=(rotDir<0); }
+        if(!atLimit){
+          rotTickAccum += dt;
+          while(rotTickAccum >= 0.055){ rotTickAccum -= 0.055; sRoll(); }
+        } else rotTickAccum=0;
+      } else rotTickAccum=0;
+      if(freezeTimer>0){ freezeTimer=Math.max(0, freezeTimer-dt); }
+      if(freezeTimer<=0){                                     // descent is paused while frozen
+        if(dropPhase==='wait'){
+          dropTimer -= dt;
+          if(dropTimer<=0){ dropPhase='shiver'; shiverTime=SHIVER_DUR; }
+        } else { // shiver, then drop
+          shiverTime -= dt;
+          if(shiverTime<=0){
+            dropPhase='wait';
+            descendOffset += ROW_H * rowsPerDrop(level);        // drop N whole rows (N grows per stage)
+            while(descendOffset >= ROW_H - 0.001){ descendOffset -= ROW_H; spawnTopRow(); }
+            dropTimer = dropInterval;                            // constant per stage (from the rule)
+          }
+        }
+      }
+      updateBullet(dt);
+      if(comboTimer>0){ comboTimer-=dt;
+        const fill=document.getElementById('combobar-fill');
+        if(fill) fill.style.width=(Math.max(0,comboTimer/COMBO_WINDOW)*100)+'%';
+        if(comboTimer<=0){ comboTimer=0; combo=0; updateComboPill(); } }
+      checkGameOver();
+    }
+    updateFX(dt);
+    if(shake>0){ const s=shake*14; cv.style.transform=`translateX(-50%) translate(${(Math.random()*2-1)*s}px,${(Math.random()*2-1)*s}px)`; }
+    else cv.style.transform='translateX(-50%)';
+    const cd=document.getElementById('ctrldim'); if(cd) cd.style.display = (state==='play' && stageIntro>0) ? 'block' : 'none';
+    draw(ts);
+    requestAnimationFrame(frame);
+  }
+
+  // ---- Input: left / right buttons + tap the launcher to fire ----
+  const $left=document.getElementById('left'), $right=document.getElementById('right');
+  function holdDir(btn, dir){
+    const start=e=>{ e.preventDefault(); ensureAudio(); rotDir=dir; };
+    const stop = e=>{ if(e) e.preventDefault(); if(rotDir===dir) rotDir=0; };
+    btn.addEventListener('pointerdown',start);
+    btn.addEventListener('pointerup',stop);
+    btn.addEventListener('pointerleave',stop);
+    btn.addEventListener('pointercancel',stop);
+  }
+  holdDir($left,-1); holdDir($right,1);
+
+  // ---- Swap (canvas button at bottom of queue) ----
+  function swapLoaded(){
+    if(!playing()) return;
+    const t=curColor; curColor=queue[0]; queue[0]=t;
+    sStick();
+  }
+
+  // tap the launcher (cannon) to fire; small swap button just right of it changes the loaded bubble
+  cv.addEventListener('pointerdown',e=>{
+    const rect=cv.getBoundingClientRect();
+    const x=e.clientX-rect.left, y=e.clientY-rect.top;
+    const sb=swapBtnPos(), sdx=x-sb.x, sdy=y-sb.y;
+    if(sdx*sdx+sdy*sdy <= (sb.rr+8)*(sb.rr+8)){ e.preventDefault(); ensureAudio(); swapLoaded(); return; }
+    const g=skillGaugePos(), gdx=x-g.x, gdy=y-g.y;
+    if(gauge>=GAUGE_MAX && gdx*gdx+gdy*gdy <= (g.rr+6)*(g.rr+6)){ e.preventDefault(); ensureAudio(); armRainbow(); return; }
+    const cc=dropClockPos(), cdx=x-cc.x, cdy=y-cc.y;
+    if(cdx*cdx+cdy*cdy <= (cc.rr+6)*(cc.rr+6)){ e.preventDefault(); ensureAudio(); useFreeze(); return; }
+    const dx=x-shooterX, dy=y-shooterY, hit=r+34;
+    if(dx*dx+dy*dy <= hit*hit){ e.preventDefault(); ensureAudio(); shoot(); }
+  });
+  // tap the (full) gauge bar to arm the rainbow skill
+  // dedicated skill button (the gauge bar itself is not tappable, to avoid accidental use)
+  // skill is activated by tapping the circular gauge dial (handled in the canvas pointerdown above)
+  // keyboard (desktop)
+  window.addEventListener('keydown',e=>{
+    if(e.key==='ArrowLeft'){ ensureAudio(); rotDir=-1; e.preventDefault(); }
+    else if(e.key==='ArrowRight'){ ensureAudio(); rotDir=1; e.preventDefault(); }
+    else if((e.key===' '||e.key==='Enter') && !e.repeat){ ensureAudio(); shoot(); e.preventDefault(); }
+  });
+  window.addEventListener('keyup',e=>{
+    if(e.key==='ArrowLeft' && rotDir===-1) rotDir=0;
+    if(e.key==='ArrowRight' && rotDir===1) rotDir=0;
+  });
+  document.getElementById('restart').addEventListener('click',()=>{ startScreen.classList.remove('show'); newGame(); paused=false; });
+  document.getElementById('toLobby').addEventListener('click',showStart);
+  document.getElementById('scNext').addEventListener('click',()=>{ document.getElementById('stageClear').classList.remove('show'); advanceStage(); paused=false; });
+  document.getElementById('scQuit').addEventListener('click',()=>{ endGame(true); });
+  document.getElementById('lobbyRank').addEventListener('click',()=>{ ensureAudio(); openRank(); });
+  document.getElementById('lobbyQuit').addEventListener('click',()=>{ try{ window.close(); }catch(e){} });
+  { const goHub=()=>{ try{ location.href='index.html'; }catch(e){} };
+    document.getElementById('toHub').addEventListener('click',goHub);
+    document.getElementById('mHub').addEventListener('click',goHub); }
+  // leaderboard name submit (asked once, then remembered)
+  document.getElementById('nameSubmit').addEventListener('click',()=>{
+    const ni=document.getElementById('nameInput'); const nm=(ni.value||'').trim().slice(0,12);
+    if(!nm) return;
+    setStoredName(nm);
+    document.getElementById('lbNameRow').style.display='none';
+    lbSubmitAndShow(nm);
+  });
+
+  // ---- Settings / start overlays ----
+  const startScreen=document.getElementById('startScreen');
+  const settingsPanel=document.getElementById('settingsPanel');
+  function openSettings(){
+    hideAllPanels();
+    updateSoundLabel(); updateFsIcon();
+    paused=true; rotDir=0; settingsPanel.classList.add('show');
+  }
+  function closeSettings(){ settingsPanel.classList.remove('show'); if(state==='play') paused=false; }
+  function showStart(){ state='lobby'; paused=true; bgmActive=false; applyBgm(); overlay.classList.remove('show'); document.getElementById('stageClear').classList.remove('show'); hideAllPanels(); startScreen.classList.add('show'); }
+  document.getElementById('settings').addEventListener('click',()=>{ ensureAudio();
+    if(settingsPanel.classList.contains('show')) closeSettings(); else openSettings(); });
+  document.getElementById('rankBtn').addEventListener('click',()=>{ ensureAudio();
+    if(document.getElementById('rankPanel').classList.contains('show')) closeRank(); else openRank(); });
+  document.getElementById('rankBack').addEventListener('click',closeRank);
+  document.getElementById('mResume').addEventListener('click',closeSettings);
+  document.getElementById('mBgm').addEventListener('click',toggleBgm);
+  document.getElementById('mSfx').addEventListener('click',toggleSfx);
+  document.getElementById('mFs').addEventListener('click',()=>{ if(isFs()) exitFs(); else enterFs(); });
+  document.getElementById('mRestart').addEventListener('click',()=>{ closeSettings(); newGame(); });
+  document.getElementById('mQuit').addEventListener('click',()=>{ if(state==='play'){ closeSettings(); endGame(true); } else { showStart(); } });
+  document.getElementById('startBtn').addEventListener('click',()=>{ ensureAudio(); enterFs(); startScreen.classList.remove('show'); newGame(); paused=false; });
+  // fullscreen (toggled from inside Settings)
+  function isFs(){ return document.fullscreenElement || document.webkitFullscreenElement; }
+  function enterFs(){ const el=document.documentElement; const fn=el.requestFullscreen||el.webkitRequestFullscreen; if(fn) try{ fn.call(el); }catch(e){} }
+  function exitFs(){ const fn=document.exitFullscreen||document.webkitExitFullscreen; if(fn) try{ fn.call(document); }catch(e){} }
+  function updateFsIcon(){ const b=document.getElementById('mFs'); if(b) b.textContent = isFs() ? t('fullscreenExit') : t('fullscreen'); }
+  document.addEventListener('fullscreenchange', updateFsIcon);
+  document.addEventListener('webkitfullscreenchange', updateFsIcon);
+  // language sub-panel
+  const langPanel=document.getElementById('langPanel');
+  document.getElementById('mLang').addEventListener('click',()=>{ settingsPanel.classList.remove('show'); langPanel.classList.add('show'); });
+  const namePanel=document.getElementById('namePanel');
+  document.getElementById('mName').addEventListener('click',()=>{
+    settingsPanel.classList.remove('show');
+    const ne=document.getElementById('nameEdit'); ne.value=getName(); namePanel.classList.add('show');
+    try{ ne.focus(); }catch(e){}
+  });
+  document.getElementById('nameSave').addEventListener('click',()=>{
+    const v=(document.getElementById('nameEdit').value||'').trim().slice(0,12);
+    if(v) setStoredName(v);
+    namePanel.classList.remove('show'); openSettings();
+  });
+  document.getElementById('nameBack').addEventListener('click',()=>{ namePanel.classList.remove('show'); openSettings(); });
+  // background color picker
+  (function(){
+    const pick=document.getElementById('bgpick');
+    const apply=v=>{ bgColor=v; document.documentElement.style.setProperty('--bg', v); };
+    pick.value=bgColor; apply(bgColor);
+    pick.addEventListener('input', e=>apply(e.target.value));
+  })();
+  (function(){
+    const pick=document.getElementById('lpick');
+    pick.value=launcherColor;
+    pick.addEventListener('input', e=>{ launcherColor=e.target.value; });
+  })();
+  document.getElementById('langBack').addEventListener('click',()=>{ langPanel.classList.remove('show'); settingsPanel.classList.add('show'); });
+  langPanel.querySelectorAll('[data-lang]').forEach(b=>{
+    b.addEventListener('click',()=>{ lang=b.getAttribute('data-lang'); applyLang(); langPanel.classList.remove('show'); settingsPanel.classList.add('show'); });
+  });
+
+  // init
+  function boot(){ init(); newGame(); aimAngle=0; lastT=0; lang='en'; applyLang(); paused=true; showStart(); requestAnimationFrame(frame); }
+  let resizeTimer;
+  window.addEventListener('resize',()=>{ clearTimeout(resizeTimer);
+    resizeTimer=setTimeout(()=>{ init(); },200); });   // recompute layout only — keep the current game
+  boot();
+})();
+</script>
+</body>
+</html>

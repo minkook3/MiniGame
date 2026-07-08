@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>미니게임</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#ece3d0; --ink:#3a3f4a; --muted:#8a8172;
+    --card:#fffdf7; --line:#d9cfba;
+    --shelf-gap:16px;
+    --display:'Fredoka', system-ui, -apple-system, sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; }
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-tap-highlight-color:transparent; user-select:none;
+    display:flex; flex-direction:column;
+    padding:calc(env(safe-area-inset-top) + 22px) 0 calc(env(safe-area-inset-bottom) + 24px);
+    overflow-x:hidden;
+  }
+  /* faint dotted texture, like a play mat */
+  body::before{
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image:radial-gradient(rgba(58,63,74,.06) 1.5px, transparent 1.6px);
+    background-size:22px 22px;
+  }
+  header, .shelfwrap, footer{ position:relative; z-index:1; }
+
+  header{ padding:0 24px 6px; }
+  .eyebrow{ font-family:var(--display); font-weight:600; font-size:13px; letter-spacing:3px;
+    text-transform:uppercase; color:var(--muted); margin:0 0 2px; }
+  h1{ font-family:var(--display); font-weight:700; font-size:clamp(34px,10vw,52px);
+    line-height:.98; margin:0; letter-spacing:-.5px; }
+  h1 .dot{ color:#e5484d; }
+  .sub{ margin:10px 0 0; font-size:15px; color:var(--muted); }
+
+  .shelfwrap{ flex:1; display:flex; align-items:center; min-height:0; }
+  .shelf{
+    display:flex; gap:var(--shelf-gap); align-items:stretch;
+    overflow-x:auto; overflow-y:hidden; width:100%;
+    padding:20px 24px 26px; scroll-snap-type:x mandatory;
+    -webkit-overflow-scrolling:touch; scrollbar-width:none;
+  }
+  .shelf::-webkit-scrollbar{ display:none; }
+
+  .card{
+    scroll-snap-align:center; flex:0 0 auto;
+    width:min(74vw,260px); background:var(--card);
+    border:3px solid var(--line); border-radius:24px;
+    box-shadow:0 8px 0 var(--line);
+    display:flex; flex-direction:column; overflow:hidden;
+    text-decoration:none; color:inherit; cursor:pointer;
+    transition:transform .08s ease, box-shadow .08s ease;
+    animation:rise .5s cubic-bezier(.2,.9,.3,1) backwards;
+  }
+  .card:nth-child(1){ animation-delay:.02s; }
+  .card:nth-child(2){ animation-delay:.10s; }
+  .card:nth-child(3){ animation-delay:.18s; }
+  .card:nth-child(4){ animation-delay:.26s; }
+  @keyframes rise{ from{ opacity:0; transform:translateY(16px); } to{ opacity:1; transform:none; } }
+
+  .card.play{ border-color:#3b82f6; box-shadow:0 8px 0 #1b4fa8; }
+  .card.play:active{ transform:translateY(8px); box-shadow:0 0 0 #1b4fa8; }
+
+  .thumb{ height:190px; display:flex; align-items:center; justify-content:center; position:relative; }
+  .bubble-thumb{ background:radial-gradient(circle at 50% 38%, #fff 0, #f4ecda 78%); }
+  .cluster{ position:relative; width:150px; height:120px; }
+  .bub{ position:absolute; width:44px; height:44px; border-radius:50%;
+    box-shadow:inset 0 -5px 0 rgba(0,0,0,.12), inset 0 6px 6px rgba(255,255,255,.45); }
+  .bub.r{ background:#e5484d; } .bub.y{ background:#f2c416; } .bub.g{ background:#39ad5e; }
+  .bub.b{ background:#3b82f6; } .bub.p{ background:#8e44d0; } .bub.o{ background:#f0801a; }
+  .b1{ left:31px; top:0; } .b2{ left:75px; top:0; }
+  .b3{ left:9px; top:38px; } .b4{ left:53px; top:38px; } .b5{ left:97px; top:38px; }
+  .b6{ left:53px; top:76px; }
+  .launcher{ position:absolute; left:50%; bottom:-6px; transform:translateX(-50%);
+    width:0; height:0; border-left:11px solid transparent; border-right:11px solid transparent;
+    border-bottom:20px solid var(--ink); }
+
+  .soon-thumb{ background:repeating-linear-gradient(45deg,#efe7d6,#efe7d6 12px,#e9e0cd 12px,#e9e0cd 24px); }
+  .qmark{ font-family:var(--display); font-weight:700; font-size:64px; color:#c9bfa8; }
+
+  .cardmeta{ padding:14px 18px 18px; border-top:2px dashed var(--line); }
+  .ctitle{ display:block; font-family:var(--display); font-weight:600; font-size:22px; }
+  .cstate{ display:inline-block; margin-top:6px; font-size:12px; font-weight:700; letter-spacing:1px;
+    text-transform:uppercase; padding:3px 10px; border-radius:999px; }
+  .card.play .cstate{ background:#e7f0ff; color:#2563eb; }
+  .card.soon{ cursor:default; }
+  .card.soon .ctitle{ color:#b3a992; }
+  .card.soon .cstate{ background:#e5ddca; color:#9a8f77; }
+
+  footer{ padding:0 24px; text-align:center; color:var(--muted); font-size:12.5px; }
+  .hint{ display:inline-flex; align-items:center; gap:6px; }
+  .hint svg{ width:14px; height:14px; }
+
+  @media (prefers-reduced-motion: reduce){ .card{ animation:none; } }
+</style>
+</head>
+<body>
+  <header>
+    <p class="eyebrow">Mini Games</p>
+    <h1>미니게임<span class="dot">.</span></h1>
+    <p class="sub">플레이할 게임을 골라보세요.</p>
+  </header>
+
+  <div class="shelfwrap">
+    <div class="shelf" id="shelf">
+      <a class="card play" href="bubble-shooter.html">
+        <div class="thumb bubble-thumb">
+          <div class="cluster">
+            <span class="bub r b1"></span><span class="bub y b2"></span>
+            <span class="bub g b3"></span><span class="bub b b4"></span><span class="bub o b5"></span>
+            <span class="bub p b6"></span>
+            <span class="launcher"></span>
+          </div>
+        </div>
+        <div class="cardmeta">
+          <span class="ctitle">버블슈터</span>
+          <span class="cstate">플레이</span>
+        </div>
+      </a>
+
+      <div class="card soon">
+        <div class="thumb soon-thumb"><span class="qmark">?</span></div>
+        <div class="cardmeta"><span class="ctitle">준비 중</span><span class="cstate">Coming soon</span></div>
+      </div>
+
+      <div class="card soon">
+        <div class="thumb soon-thumb"><span class="qmark">?</span></div>
+        <div class="cardmeta"><span class="ctitle">준비 중</span><span class="cstate">Coming soon</span></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span class="hint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg>
+      옆으로 넘겨서 더 보기
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+    </span>
+  </footer>
+</body>
+</html>
