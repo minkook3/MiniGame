@@ -19,10 +19,10 @@
     touch-action:none;
   }
   /* Game aspect ratio (width : height). Change these two numbers to set the ratio. */
-  :root{ --ar-w:9; --ar-h:13; --topbar-h:74px; }
+  :root{ --ar-w:9; --ar-h:13; --topbar-h:96px; }
   .topbar{
     width:min(100vw,520px); height:var(--topbar-h); flex:0 0 auto; box-sizing:border-box;
-    padding:calc(env(safe-area-inset-top) + 8px) 20px 16px;
+    padding:calc(env(safe-area-inset-top) + 10px) 20px 32px;
     display:flex; align-items:center; justify-content:space-between;
   }
   .topicons{ display:flex; gap:12px; align-items:center; }
@@ -31,7 +31,8 @@
     height: min(calc(100dvh - var(--topbar-h)), 100vw * (var(--ar-h) / var(--ar-w)));
     width: auto; max-width:100vw;
     display:flex; flex-direction:column; position:relative;
-    overflow:hidden;
+    overflow:hidden; border-radius:16px;
+    box-shadow:0 0 0 3px rgba(58,63,74,.28), 0 14px 44px rgba(0,0,0,.16);
   }
   .stage{position:relative; flex:1; min-height:0;}
   canvas{display:block; position:absolute; left:50%; top:0; transform:translateX(-50%);}
@@ -246,8 +247,12 @@
       <div class="scrow"><span id="scT_combo">Best Combo</span><b id="scV_combo">×0</b></div>
       <div class="scrow"><span id="scT_rb">Rainbow</span><b id="scV_rb">0</b></div>
       <div class="scrow"><span id="scT_fz">Freeze</span><b id="scV_fz">0</b></div>
+      <div class="scrow"><span id="scT_bounce">Wall Bounces</span><b id="scV_bounce">0</b></div>
+      <div class="scrow"><span id="scT_far">Farthest Shot</span><b id="scV_far">0</b></div>
       <div class="scrow"><span id="scT_score">Stage Score</span><b id="scV_score">0</b></div>
     </div>
+    <div class="setcat" id="scTimeHead" style="width:min(280px,80%)">Stage Best Times</div>
+    <ol class="lb" id="scTimeList" style="width:min(280px,80%);margin:2px 0 4px"></ol>
     <div class="scbtns">
       <button class="btn wide" id="scNext">Next Stage</button>
       <button class="btn wide ghost" id="scQuit">Quit</button>
@@ -266,6 +271,7 @@
     <div class="setcat" id="catGeneral">General</div>
     <button class="btn wide ghost" id="mBgm">Music: On</button>
     <button class="btn wide ghost" id="mSfx">Sound FX: On</button>
+    <button class="btn wide ghost" id="mDrag">Drag Control: Off</button>
     <button class="btn wide ghost" id="mLang">Language: English</button>
     <button class="btn wide ghost" id="mName">Change Name</button>
     <div class="setcat" id="catDisplay">Display</div>
@@ -354,6 +360,42 @@
   // storage router: online when configured, else local
   async function storeSubmit(name, sc){ return lbOn() ? lbSubmit(name, sc) : localSubmit(name, sc); }
   async function storeTop(){ return lbOn() ? lbTop() : localTop(); }
+  // ---- per-stage clear-time ranking (fastest first) ----
+  async function timeSubmit(name, stage, ms){
+    if(!lbOn()) return;
+    try{ await fetch(SUPABASE_URL+'/rest/v1/times', { method:'POST',
+      headers:{ ...lbHeaders(), 'Content-Type':'application/json', 'Prefer':'return=minimal' },
+      body: JSON.stringify({ name:String(name).slice(0,12), stage:Math.max(1,Math.floor(stage)), ms:Math.max(0,Math.floor(ms)) }) }); }catch(e){}
+  }
+  async function timeTop(stage){
+    if(!lbOn()) return [];
+    try{ const res=await fetch(SUPABASE_URL+'/rest/v1/times?select=name,ms&stage=eq.'+Math.floor(stage)+'&order=ms.asc&limit=10', { headers:lbHeaders() });
+      return res.ok ? await res.json() : []; }catch(e){ return []; }
+  }
+  function localTimeSubmit(name, stage, ms){
+    try{ const a=JSON.parse(localStorage.getItem('bs_times')||'[]');
+      a.push({ name:String(name).slice(0,12), stage:Math.floor(stage), ms:Math.max(0,Math.floor(ms)) });
+      localStorage.setItem('bs_times', JSON.stringify(a.slice(-300))); }catch(e){}
+  }
+  function localTimeTop(stage){ try{ return JSON.parse(localStorage.getItem('bs_times')||'[]').filter(x=>x.stage===Math.floor(stage)).sort((a,b)=>a.ms-b.ms).slice(0,10); }catch(e){ return []; } }
+  async function storeTimeSubmit(name, stage, ms){ return lbOn() ? timeSubmit(name,stage,ms) : localTimeSubmit(name,stage,ms); }
+  async function storeTimeTop(stage){ return lbOn() ? timeTop(stage) : localTimeTop(stage); }
+  function fmtTimeMs(ms){ const s=Math.max(0,ms/1000), m=Math.floor(s/60), sec=s-m*60; return m+':'+(sec<10?'0':'')+sec.toFixed(1); }
+  function renderTimes(list, rows, myName, myMs){
+    if(!list) return; list.innerHTML='';
+    if(!rows || !rows.length){ const li=document.createElement('li'); li.className='empty'; li.textContent=t('noScores'); list.appendChild(li); return; }
+    let marked=false;
+    rows.forEach((row,i)=>{
+      const li=document.createElement('li');
+      const mine=row.name===myName;
+      const isCur=mine && !marked && myMs!=null && Number(row.ms)===Number(myMs);
+      if(isCur){ li.className='me current'; marked=true; } else if(mine){ li.className='me'; }
+      const rk=document.createElement('span'); rk.className='rk'; rk.textContent=(i+1);
+      const nm=document.createElement('span'); nm.className='nm'; nm.textContent=row.name;
+      const sc=document.createElement('span'); sc.className='sc'; sc.textContent=fmtTimeMs(row.ms);
+      li.append(rk,nm,sc); list.appendChild(li);
+    });
+  }
   function renderInto(list, rows, myName, myScore){
     if(!list) return; list.innerHTML='';
     if(!rows || !rows.length){ const li=document.createElement('li'); li.className='empty';
@@ -411,17 +453,17 @@
       gameOverSub:'The bubbles reached the line.', score:'Score', retry:'Retry',
       settings:'Settings', resume:'Resume', sound:'Sound', restart:'Restart', quit:'Quit',
       language:'Language', langName:'English', back:'Back', on:'On', off:'Off',
-      scoreLbl:'SCORE', levelLbl:'STAGE', comboLbl:'COMBO', skill:'SKILL', ready:'READY', swap:'SWAP', combo:'COMBO', stage:'Stage', fire:'FIRE', background:'Background', launcher:'Launcher', name:'Name', skRainbow:'Rainbow', skFreeze:'Freeze', ranking:'Ranking', rankOnline:'Online ranking', rankLocal:'Local (this device)', noScores:'No scores yet', ended:'Game Ended', fullscreen:'Fullscreen', fullscreenExit:'Exit fullscreen', catGeneral:'General', catDisplay:'Display', catGame:'Game', bgm:'Music', sfx:'Sound FX', stageClear:'Stage Clear!', nextStage:'Next Stage', lobby:'Lobby', quitGame:'Quit Game', startGame:'Start Game', statTime:'Time', statShots:'Shots', statCombo:'Best Combo', statSkill:'Skills Used', statScore:'Stage Score', changeName:'Change Name', save:'Save', hub:'Game List' },
+      scoreLbl:'SCORE', levelLbl:'STAGE', comboLbl:'COMBO', skill:'SKILL', ready:'READY', swap:'SWAP', combo:'COMBO', stage:'Stage', fire:'FIRE', background:'Background', launcher:'Launcher', name:'Name', skRainbow:'Rainbow', skFreeze:'Freeze', ranking:'Ranking', rankOnline:'Online ranking', rankLocal:'Local (this device)', noScores:'No scores yet', ended:'Game Ended', fullscreen:'Fullscreen', fullscreenExit:'Exit fullscreen', catGeneral:'General', catDisplay:'Display', catGame:'Game', bgm:'Music', sfx:'Sound FX', stageClear:'Stage Clear!', nextStage:'Next Stage', lobby:'Lobby', quitGame:'Quit Game', startGame:'Start Game', statTime:'Time', statShots:'Shots', statCombo:'Best Combo', statSkill:'Skills Used', statScore:'Stage Score', changeName:'Change Name', save:'Save', hub:'Game List', dragAim:'Drag Control', long:'LONG SHOT', superLong:'SUPER LONG!', statBounce:'Wall Bounces', statFar:'Farthest Shot', newBubbles:'NEW BUBBLES!', timeRank:'Stage Best Times' },
     ja:{ title:'バブルシューター', start:'スタート', gameOver:'ゲームオーバー',
       gameOverSub:'ボールが底のラインに達しました。', score:'スコア', retry:'もう一度',
       settings:'設定', resume:'再開', sound:'サウンド', restart:'リスタート', quit:'終了',
       language:'言語', langName:'日本語', back:'戻る', on:'オン', off:'オフ',
-      scoreLbl:'スコア', levelLbl:'ステージ', comboLbl:'コンボ', skill:'スキル', ready:'READY', swap:'交換', combo:'コンボ', stage:'ステージ', fire:'発射', background:'背景', launcher:'発射台', name:'名前', skRainbow:'レインボー', skFreeze:'時間停止', ranking:'ランキング', rankOnline:'オンラインランキング', rankLocal:'ローカル（この端末）', noScores:'記録なし', ended:'ゲーム終了', fullscreen:'全画面', fullscreenExit:'全画面を終了', catGeneral:'一般', catDisplay:'表示', catGame:'ゲーム', bgm:'音楽', sfx:'効果音', stageClear:'ステージクリア！', nextStage:'次のステージ', lobby:'ロビー', quitGame:'ゲーム終了', startGame:'ゲーム開始', statTime:'タイム', statShots:'発射数', statCombo:'最大コンボ', statSkill:'スキル使用', statScore:'獲得スコア', changeName:'名前を変更', save:'保存', hub:'ゲーム一覧' },
+      scoreLbl:'スコア', levelLbl:'ステージ', comboLbl:'コンボ', skill:'スキル', ready:'READY', swap:'交換', combo:'コンボ', stage:'ステージ', fire:'発射', background:'背景', launcher:'発射台', name:'名前', skRainbow:'レインボー', skFreeze:'時間停止', ranking:'ランキング', rankOnline:'オンラインランキング', rankLocal:'ローカル（この端末）', noScores:'記録なし', ended:'ゲーム終了', fullscreen:'全画面', fullscreenExit:'全画面を終了', catGeneral:'一般', catDisplay:'表示', catGame:'ゲーム', bgm:'音楽', sfx:'効果音', stageClear:'ステージクリア！', nextStage:'次のステージ', lobby:'ロビー', quitGame:'ゲーム終了', startGame:'ゲーム開始', statTime:'タイム', statShots:'発射数', statCombo:'最大コンボ', statSkill:'スキル使用', statScore:'獲得スコア', changeName:'名前を変更', save:'保存', hub:'ゲーム一覧', dragAim:'ドラッグ操作', long:'ロングショット', superLong:'スーパーロング！', statBounce:'壁バウンド', statFar:'最長ショット', newBubbles:'新しい玉が追加！', timeRank:'ステージ最速記録' },
     ko:{ title:'버블 슈터', start:'시작하기', gameOver:'게임 오버',
       gameOverSub:'구슬이 바닥선에 닿았어요.', score:'점수', retry:'다시 하기',
       settings:'설정', resume:'게임 재개', sound:'사운드', restart:'게임 재시작', quit:'게임 나가기',
       language:'언어', langName:'한국어', back:'뒤로', on:'켜짐', off:'꺼짐',
-      scoreLbl:'점수', levelLbl:'스테이지', comboLbl:'콤보', skill:'스킬', ready:'READY', swap:'변경', combo:'콤보', stage:'스테이지', fire:'발사', background:'배경', launcher:'발사대', name:'이름', skRainbow:'무지개', skFreeze:'시간정지', ranking:'랭킹', rankOnline:'온라인 랭킹', rankLocal:'로컬(이 기기)', noScores:'기록 없음', ended:'게임 종료', fullscreen:'전체화면', fullscreenExit:'전체화면 종료', catGeneral:'일반', catDisplay:'화면', catGame:'게임', bgm:'배경음악', sfx:'효과음', stageClear:'스테이지 클리어!', nextStage:'다음 스테이지', lobby:'로비', quitGame:'게임 종료', startGame:'게임 시작', statTime:'플레이 타임', statShots:'발사 수', statCombo:'최고 콤보', statSkill:'스킬 사용', statScore:'획득 점수', changeName:'이름 변경', save:'저장', hub:'게임 목록' },
+      scoreLbl:'점수', levelLbl:'스테이지', comboLbl:'콤보', skill:'스킬', ready:'READY', swap:'변경', combo:'콤보', stage:'스테이지', fire:'발사', background:'배경', launcher:'발사대', name:'이름', skRainbow:'무지개', skFreeze:'시간정지', ranking:'랭킹', rankOnline:'온라인 랭킹', rankLocal:'로컬(이 기기)', noScores:'기록 없음', ended:'게임 종료', fullscreen:'전체화면', fullscreenExit:'전체화면 종료', catGeneral:'일반', catDisplay:'화면', catGame:'게임', bgm:'배경음악', sfx:'효과음', stageClear:'스테이지 클리어!', nextStage:'다음 스테이지', lobby:'로비', quitGame:'게임 종료', startGame:'게임 시작', statTime:'플레이 타임', statShots:'발사 수', statCombo:'최고 콤보', statSkill:'스킬 사용', statScore:'획득 점수', changeName:'이름 변경', save:'저장', hub:'게임 목록', dragAim:'드래그 조작', long:'롱샷!', superLong:'슈퍼 롱샷!', statBounce:'벽 튕김', statFar:'최장 거리', newBubbles:'새 구슬 등장!', timeRank:'스테이지 최고 기록' },
   };
   function t(k){ return (I18N[lang]&&I18N[lang][k]) || I18N.en[k] || k; }
   function setText(id,txt){ const e=document.getElementById(id); if(e) e.textContent=txt; }
@@ -436,7 +478,9 @@
     setText('toLobby',t('lobby'));
     setText('scTitle',t('stageClear')); setText('scNext',t('nextStage')); setText('scQuit',t('quit'));
     setText('scT_time',t('statTime')); setText('scT_shots',t('statShots')); setText('scT_combo',t('statCombo'));
-    setText('scT_rb',t('skRainbow')); setText('scT_fz',t('skFreeze')); setText('scT_score',t('statScore'));
+    setText('scT_rb',t('skRainbow')); setText('scT_fz',t('skFreeze'));
+    setText('scT_bounce',t('statBounce')); setText('scT_far',t('statFar'));
+    setText('scT_score',t('statScore'));
     setText('ov-title',t('gameOver')); setText('ov-sub',t('gameOverSub'));
     setText('ov-scoreword',t('score')); setText('restart',t('retry'));
     setText('set-title',t('settings')); setText('mResume',t('resume'));
@@ -445,6 +489,7 @@
     setText('mName',t('changeName'));
     setText('nameTitle',t('changeName')); setText('nameSave',t('save')); setText('nameBack',t('back'));
     { const ne=document.getElementById('nameEdit'); if(ne) ne.placeholder=t('name'); }
+    updateDragLabel();
     setText('lang-title',t('language')); setText('langBack',t('back'));
     setText('score-lbl',t('scoreLbl')); setText('level-lbl',t('levelLbl')); setText('combo-lbl',t('comboLbl'));
     setText('fire',t('fire')); setText('mBgLabel',t('background')); setText('mLnLabel',t('launcher'));
@@ -526,6 +571,10 @@
       {lo:98.00,  fi:146.83, voi:[246.94,293.66,349.23,415.30]}, // G7♭9 (B D F A♭) — jazzy dominant
     ];
     const comp=[0,3,6];                 // syncopated bossa comping (eighth grid)
+    // sparse tasteful melody, played once every 4th loop (step within a 32-step / 4-bar loop -> note freq)
+    const MEL={ 4:783.99, 6:659.25, 10:659.25, 13:523.25, 16:698.46, 19:587.33, 24:587.33, 27:493.88, 30:523.25 };
+    // 4-bar finishing phrase, played over the loop right after the 4th-loop melody (resolves down to tonic C)
+    const MEL_END={ 0:783.99, 4:659.25, 8:523.25, 12:659.25, 16:587.33, 20:698.46, 24:587.33, 27:493.88, 30:523.25 };
     let next=actx.currentTime+0.15, step=0;
     function mnote(freq,t,dur,type,vol,atk){
       const o=actx.createOscillator(), g=actx.createGain();
@@ -545,6 +594,16 @@
         if(comp.indexOf(pos)>=0){                                           // soft syncopated comping
           for(const f of ch.voi) mnote(f, next, eighth*1.6, 'triangle', 0.16, 0.03);
         }
+        const loop=Math.floor(step/32), inStep=step%32;                     // 32 eighth-steps = one 4-bar loop
+        if(loop%4===3 && MEL[inStep]){                                      // melody once every 4th loop
+          const swing=(inStep%2===1)?eighth*0.34:0;                         // delay off-beats -> light swing
+          mnote(MEL[inStep], next+swing, beat*0.75, 'sine', 0.2, 0.02);
+        }
+        if(loop%4===0 && loop>0 && MEL_END[inStep]){                        // 4-bar finish over the next loop
+          const swing=(inStep%2===1)?eighth*0.34:0;
+          const dur=(inStep===30)?beat*1.8:beat*0.75;                       // hold the final tonic
+          mnote(MEL_END[inStep], next+swing, dur, 'sine', 0.2, 0.02);
+        }
         step++; next+=eighth;
       }
     }
@@ -559,6 +618,8 @@
     if(audioReady) sfx.gain.setTargetAtTime(sfxOn?0.9:0, actx.currentTime, 0.05);
     updateSoundLabel();
   }
+  function updateDragLabel(){ setText('mDrag', t('dragAim')+': '+(dragAim?t('on'):t('off'))); }
+  function toggleDrag(){ dragAim=!dragAim; dragging=false; rotDir=0; updateDragLabel(); }
 
   // ---- Geometry (set on init) ----
   let DPR=1, W=0, H=0, COLS=8, d=0, r=0, ROW_H=0;
@@ -585,6 +646,7 @@
   function descentInterval(st){ return Math.max(DROP_MIN, DROP_START - (st-1)*DROP_STEP); }
   // stage intro: show "Stage N" then a 3s countdown before play resumes
   let stageIntro=0;       // seconds left in the intro (0 = playing)
+  const SPAWN_DUR=0.55;   // pop-in animation length for freshly added bubbles
   const INTRO_BANNER=1.4; // title shows this long, then 3..2..1
   function startStageIntro(){ stageIntro = INTRO_BANNER + 3; }
   function playing(){ return state==='play' && !paused && stageIntro<=0; }
@@ -622,12 +684,25 @@
   const TUTORIAL_SHOTS=3;
   // per-stage play stats (for the stage-clear summary)
   let stageTime=0, stageShots=0, stageMaxCombo=0, stageRainbow=0, stageFreeze=0, stageScoreStart=0;
-  function resetStageStats(){ stageTime=0; stageShots=0; stageMaxCombo=0; stageRainbow=0; stageFreeze=0; stageScoreStart=score; }
+  let stageBounces=0, stageFarthest=0;           // total wall bounces + farthest single shot (px)
+  let lastShotDist=0, lastShotX=0, lastShotY=0;  // distance the last shot traveled
+  let lastShotBounces=0;                          // wall bounces of the last shot
+  let floaters=[];                               // floating "+bonus" texts {x,y,text,color,age,life}
+  function addFloater(x,y,text,color,scale,mult,opts){ opts=opts||{}; floaters.push({x,y,text,color:color||'#f2c416',scale:scale||1,mult:mult||1,icon:(opts.icon!=null?opts.icon:null),age:0,life:opts.life||1.9}); }
+  function resetStageStats(){ stageTime=0; stageShots=0; stageMaxCombo=0; stageRainbow=0; stageFreeze=0; stageScoreStart=score; stageBounces=0; stageFarthest=0; }
   let bullet=null;        // {x,y,vx,vy,color}
   let curColor=0;         // loaded bubble
   let queue=[];           // up to 3 waiting bubbles
   let aimAngle=0;         // radians from vertical, + = right
   let rotDir=0;           // -1 left, +1 right (from held buttons)
+  let dragAim=false;      // option: aim by dragging on the field, release to fire
+  let dragging=false;
+  function aimFromPoint(px,py){
+    let a=Math.atan2(px-shooterX, -(py-shooterY));
+    if(a> MAX_ANGLE) a= MAX_ANGLE;
+    if(a< -MAX_ANGLE) a=-MAX_ANGLE;
+    aimAngle=a;
+  }
   let rotTickAccum=0;     // drives the rolling aim sound
   const ROT_SPEED=0.95;   // rad per second while a direction button is held
   let particles=[], falling=[];
@@ -684,11 +759,11 @@
     return randColor();
   }
 
-  function spawnTopRow(){
+  function spawnTopRow(animate){
     topParity ^= 1;
     const len = rowLen(0);
     const row = new Array(len);
-    for(let c=0;c<len;c++) row[c] = {color: randColor()};
+    for(let c=0;c<len;c++) row[c] = {color: randColor(), sp: animate ? SPAWN_DUR : 0};
     grid.unshift(row);
   }
 
@@ -696,7 +771,7 @@
     grid=[]; topParity=0; descendOffset=0; score=0; level=1; state='play';
     bullet=null; particles=[]; falling=[]; rotDir=0; aimAngle=0;
     combo=0; comboTimer=0; comboExit=0; shotCleared=0; turnFloated=0; comboFlash=0; clearFlash=0; shotsFired=0; gauge=0;
-    armed=false; wasFull=false; shake=0; flash=0; ripples=[];
+    armed=false; wasFull=false; shake=0; flash=0; ripples=[]; floaters=[]; lastShotDist=0;
     freezeTimer=0; clockGauge=0; wasClockFull=false;
     $score.textContent='0'; $level.textContent='1';
     document.getElementById('combopill').style.display='none';
@@ -725,7 +800,7 @@
     const a = aimAngle;
     const rainbow = armed; armed=false;
     bullet = { x:shooterX, y:shooterY, vx:Math.sin(a)*BULLET_SPEED, vy:-Math.cos(a)*BULLET_SPEED,
-               color:curColor, rainbow, scale: rainbow?0.62:1, trail:[] };
+               color:curColor, rainbow, scale: rainbow?0.62:1, trail:[], dist:0, bounces:0 };
     curColor = queue.shift();
     queue.push(pickColor());
     shotsFired++; stageShots++;
@@ -747,10 +822,11 @@
       const mv = Math.min(step, remaining); remaining-=mv;
       const inv = 1/Math.hypot(bullet.vx, bullet.vy);   // recompute each step so bounces apply at once
       bullet.x += bullet.vx*inv*mv; bullet.y += bullet.vy*inv*mv;
+      bullet.dist += mv;
       if(bullet.rainbow){ bullet.trail.push({x:bullet.x,y:bullet.y}); if(bullet.trail.length>14) bullet.trail.shift(); }
       // walls: force velocity inward (prevents getting pinned and sliding up the wall)
-      if(bullet.x - brad < 0){ bullet.x = brad;   bullet.vx = Math.abs(bullet.vx); }
-      if(bullet.x + brad > W){ bullet.x = W-brad; bullet.vx = -Math.abs(bullet.vx); }
+      if(bullet.x - brad < 0){ bullet.x = brad;   bullet.vx = Math.abs(bullet.vx);  bullet.bounces++; stageBounces++; wallImpact(1, bullet.y, 1, bullet.color, bullet.rainbow); }
+      if(bullet.x + brad > W){ bullet.x = W-brad; bullet.vx = -Math.abs(bullet.vx); bullet.bounces++; stageBounces++; wallImpact(W-1, bullet.y, -1, bullet.color, bullet.rainbow); }
       // ceiling
       if(bullet.y - brad <= cellY(0)-r){ snapBullet(null); return; }
       // collide with bubbles
@@ -773,6 +849,8 @@
   }
   function snapBullet(hitCell){
     const bx=bullet.x, by=bullet.y, color=bullet.color, rainbow=bullet.rainbow;
+    lastShotDist=bullet.dist||0; lastShotX=bx; lastShotY=by; lastShotBounces=bullet.bounces||0;
+    if(lastShotDist>stageFarthest) stageFarthest=lastShotDist;
     bullet=null;
     let best=null, bestDist=Infinity;
     const consider=(i,c)=>{
@@ -869,6 +947,19 @@
       addClockGauge(COMBO_GAUGE*combo);   // combo charges the clock (freeze) gauge
       addGauge(COMBO_GAUGE*combo);        // ...and the rainbow gauge too
       if(combo>stageMaxCombo) stageMaxCombo=combo;
+      // distance bonus: the farther the shot traveled, the bigger the reward
+      const mult = (lastShotBounces||0) + 1;              // 1 bounce = x2, 2 = x3, ...
+      const bonus = Math.round(lastShotDist/8) * mult;
+      if(bonus>0){
+        score += bonus;
+        const ratio = lastShotDist/Math.max(1,H);
+        let label='', col='#2fe06b', scale=1;
+        if(ratio>=1.4){ label=t('superLong')+' '; col='#b45cff'; scale=1.5; shake=Math.max(shake,0.42); flash=Math.max(flash,0.25); vibrate([15,25,15]); }
+        else if(ratio>=0.75){ label=t('long')+' '; col='#ffd43b'; scale=1.25; shake=Math.max(shake,0.26); vibrate(18); }
+        if(mult>1) scale=Math.max(scale,1.25);
+        addFloater(lastShotX, lastShotY, label+'+'+bonus, col, scale, mult);
+      }
+      lastShotDist=0; lastShotBounces=0;
     }
     $score.textContent = score;
     const cp=document.getElementById('combopill');
@@ -893,7 +984,8 @@
   function advanceStage(){
     level++; $level.textContent=level; descendOffset=0;
     dropInterval=descentInterval(level);          // next stage's descent speed (rule table)
-    for(let k=0;k<3;k++) spawnTopRow();
+    for(let k=0;k<3;k++) spawnTopRow(true);
+    addFloater(W/2, cellY(2)+r*1.8, t('newBubbles'), '#ffffff', 1.15, 1, {life:5.0, icon:4});
     resetStageStats();
     startStageIntro();                            // "Stage N" + 3s countdown before play
   }
@@ -906,7 +998,13 @@
     setText('scV_combo', '×'+stageMaxCombo);
     setText('scV_rb', stageRainbow);
     setText('scV_fz', stageFreeze);
+    setText('scV_bounce', stageBounces);
+    setText('scV_far', Math.round(stageFarthest));
     setText('scV_score', (score-stageScoreStart));
+    setText('scTimeHead', t('timeRank'));
+    const myMs=Math.round(stageTime*1000), nm=getName(), stg=level;
+    const tl=document.getElementById('scTimeList'); if(tl) tl.innerHTML='';
+    (async()=>{ if(nm) await storeTimeSubmit(nm, stg, myMs); renderTimes(tl, await storeTimeTop(stg), nm, myMs); })();
     document.getElementById('stageClear').classList.add('show');
   }
   function endShot(){
@@ -988,7 +1086,18 @@
       particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:.5+Math.random()*.3,age:0,col,sz:r*0.3*Math.random()+2});
     }
   }
+  function wallImpact(x,y,dir,colIdx,rainbow){
+    const col = rainbow ? '#ffffff' : COLORS[colIdx];
+    ripples.push({x,y,age:0,life:0.3,max:r*2.6,col});
+    for(let k=0;k<7;k++){
+      const sp=100+Math.random()*180;
+      particles.push({ x,y, vx:dir*sp*(0.5+Math.random()*0.6), vy:(Math.random()*2-1)*sp*0.7,
+        life:0.3+Math.random()*0.25, age:0, col, sz:r*0.2*Math.random()+1.5 });
+    }
+    shake=Math.max(shake,0.07); vibrate(8);
+  }
   function updateFX(dt){
+    for(let i=0;i<grid.length;i++){ const rowc=grid[i]; for(let c=0;c<rowc.length;c++){ const cell=rowc[c]; if(cell&&cell.sp>0) cell.sp=Math.max(0,cell.sp-dt); } }
     for(let i=particles.length-1;i>=0;i--){
       const p=particles[i]; p.age+=dt;
       if(p.age>=p.life){ particles.splice(i,1); continue; }
@@ -1004,9 +1113,15 @@
     if(shake>0) shake=Math.max(0, shake-dt);
     if(flash>0) flash=Math.max(0, flash-dt*2.2);
     for(let i=ripples.length-1;i>=0;i--){ ripples[i].age+=dt; if(ripples[i].age>=ripples[i].life) ripples.splice(i,1); }
+    for(let i=floaters.length-1;i>=0;i--){ floaters[i].age+=dt; if(floaters[i].age>=floaters[i].life) floaters.splice(i,1); }
   }
 
   // ---- Drawing ----
+  function drawMiniBubble(cx,cy,rad,col){
+    ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2); ctx.fillStyle=col; ctx.fill();
+    ctx.lineWidth=Math.max(1.5,rad*0.14); ctx.strokeStyle='rgba(0,0,0,.3)'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx-rad*0.3,cy-rad*0.34,rad*0.3,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,.75)'; ctx.fill();
+  }
   function drawBubble(x,y,colorIdx,rad){
     ctx.beginPath(); ctx.arc(x,y,rad,0,Math.PI*2);
     ctx.fillStyle=COLORS[colorIdx]; ctx.fill();
@@ -1028,11 +1143,65 @@
     return '#'+((1<<24)+(R<<16)+(G<<8)+B).toString(16).slice(1);
   }
 
+  function drawFloaters(){
+    // floating "+bonus" texts
+    if(floaters.length){
+      ctx.save(); ctx.textBaseline='middle'; ctx.textAlign='left'; ctx.lineJoin='round'; ctx.miterLimit=2;
+      for(const f of floaters){
+        const p=f.age/f.life;
+        const pop=Math.min(1, f.age/0.12);
+        const riseP=Math.min(1, p/0.35);
+        const alpha=p<0.7 ? 1 : Math.max(0, 1-(p-0.7)/0.3);
+        const sz=Math.round(Math.max(18, r*0.95*f.scale)*(0.72+0.28*pop));
+        const tsz=Math.round(sz*0.6), gap=Math.round(sz*0.14), m=14;
+        const iconR=(f.icon!=null)?Math.round(sz*0.5):0, iconD=iconR*2, gi=(f.icon!=null)?Math.round(sz*0.35):0;
+        ctx.font='bold '+sz+'px system-ui,sans-serif';
+        const mainW=ctx.measureText(f.text).width;
+        let tagW=0;
+        if(f.mult>1){ ctx.font='bold '+tsz+'px system-ui,sans-serif'; tagW=ctx.measureText('x'+f.mult).width; }
+        const total=iconD+gi + mainW + (f.mult>1 ? gap+tagW : 0);
+        const half=total/2 + m;
+        const cx=Math.max(half, Math.min(W-half, f.x));
+        const cy=Math.max(sz*0.6+m, Math.min(H-sz*0.6-m, f.y - riseP*44));
+        const Lx=Math.round(cx-total/2), y=Math.round(cy);
+        ctx.globalAlpha=alpha;
+        // bubble icon
+        let tx=Lx;
+        if(f.icon!=null){ drawBubble(Lx+iconR, y, f.icon, iconR); tx=Lx+iconD+gi; }
+        // main text: thick crisp outline + solid fill (no blur)
+        ctx.font='bold '+sz+'px system-ui,sans-serif';
+        ctx.lineWidth=Math.max(4, sz*0.15); ctx.strokeStyle='rgba(45,49,58,.92)'; ctx.strokeText(f.text,tx,y);
+        ctx.fillStyle=f.color; ctx.fillText(f.text,tx,y);
+        // multiplier tag: smaller, raised, no outline — soft elliptical glow behind it for contrast
+        if(f.mult>1){
+          ctx.font='bold '+tsz+'px system-ui,sans-serif';
+          const tagX=tx+mainW+gap, tagCy=y - Math.round(sz*0.42), tagCx=tagX+tagW/2;
+          const rad=Math.max(tagW, tsz)*0.82;
+          ctx.save();
+          ctx.translate(tagCx, tagCy); ctx.scale(1.8, 1);      // stretch horizontally into an ellipse
+          const g=ctx.createRadialGradient(0,0,0,0,0,rad);
+          g.addColorStop(0,'rgba(45,49,58,.6)'); g.addColorStop(.55,'rgba(45,49,58,.34)'); g.addColorStop(1,'rgba(45,49,58,0)');
+          ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,rad,0,Math.PI*2); ctx.fill();
+          ctx.restore();
+          ctx.lineWidth=Math.max(3, tsz*0.15); ctx.strokeStyle='rgba(45,49,58,.92)'; ctx.strokeText('x'+f.mult, tagX, tagCy);
+          ctx.fillStyle=f.color; ctx.fillText('x'+f.mult, tagX, tagCy);
+        }
+      }
+      ctx.restore(); ctx.globalAlpha=1;
+    }
+  }
   function draw(ts){
     uiTs=ts;
     ctx.clearRect(0,0,W,H);
     // solid background
     ctx.fillStyle=bgColor; ctx.fillRect(0,0,W,H);
+
+    // side walls — visible boundary the bubbles bounce off
+    const wallW=Math.max(4, r*0.16);
+    ctx.fillStyle='rgba(58,63,74,.14)';
+    ctx.fillRect(0,0,wallW,H); ctx.fillRect(W-wallW,0,wallW,H);
+    ctx.fillStyle='rgba(58,63,74,.34)';
+    ctx.fillRect(wallW-2,0,2,H); ctx.fillRect(W-wallW,0,2,H);
 
     // tremble offset while the wall is about to drop
     let sx=0, sy=0;
@@ -1046,7 +1215,21 @@
 
     // grid
     for(let i=0;i<grid.length;i++){ const len=rowLen(i);
-      for(let c=0;c<len;c++) if(grid[i][c]) drawBubble(cellX(i,c)+sx,cellY(i)+sy,grid[i][c].color,r-1);
+      for(let c=0;c<len;c++){ const cell=grid[i][c]; if(!cell) continue;
+        const bx=cellX(i,c)+sx, by=cellY(i)+sy;
+        if(cell.sp>0){
+          const p=1-cell.sp/SPAWN_DUR;                 // 0 -> 1
+          const c1=1.70158, c3=c1+1;                   // ease-out-back (overshoot)
+          const e=1 + c3*Math.pow(p-1,3) + c1*Math.pow(p-1,2);
+          ctx.globalAlpha=(1-p)*0.75;                  // white flash that expands + fades
+          ctx.beginPath(); ctx.arc(bx,by,(r-1)*(1+0.7*(1-p)),0,Math.PI*2);
+          ctx.fillStyle='rgba(255,255,255,.95)'; ctx.fill();
+          ctx.globalAlpha=1;
+          drawBubble(bx,by,cell.color,(r-1)*Math.max(0.05,e));
+        } else {
+          drawBubble(bx,by,cell.color,r-1);
+        }
+      }
     }
     // falling
     for(const f of falling) drawBubble(f.x,f.y,f.color,r-1);
@@ -1070,6 +1253,7 @@
     for(const p of particles){ ctx.globalAlpha=Math.max(0,1-p.age/p.life);
       ctx.fillStyle=p.col; ctx.beginPath(); ctx.arc(p.x,p.y,p.sz,0,Math.PI*2); ctx.fill(); }
     ctx.globalAlpha=1;
+
 
     // bullet (+ rainbow trail)
     if(bullet){
@@ -1099,6 +1283,7 @@
       ctx.restore();
       ctx.textAlign='left'; ctx.textBaseline='alphabetic';
     }
+    drawFloaters();
 
     // impact flash
     if(flash>0){ ctx.save(); ctx.globalAlpha=Math.min(1,flash); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H); ctx.restore(); }
@@ -1211,7 +1396,8 @@
     return false;
   }
   function drawAim(){
-    if(bullet || !playing() || shotsFired>=TUTORIAL_SHOTS) return;
+    if(bullet || !playing()) return;
+    if(shotsFired>=TUTORIAL_SHOTS && !(dragAim && dragging)) return;
     let x=shooterX, y=shooterY, dx=Math.sin(aimAngle), dy=-Math.cos(aimAngle);
     const step=r*0.5; const dots=[]; let safety=0;
     while(safety++<700){
@@ -1329,7 +1515,7 @@
     updateFX(dt);
     if(shake>0){ const s=shake*14; cv.style.transform=`translateX(-50%) translate(${(Math.random()*2-1)*s}px,${(Math.random()*2-1)*s}px)`; }
     else cv.style.transform='translateX(-50%)';
-    const cd=document.getElementById('ctrldim'); if(cd) cd.style.display = (state==='play' && stageIntro>0) ? 'block' : 'none';
+    const cd=document.getElementById('ctrldim'); if(cd) cd.style.display='none';
     draw(ts);
     requestAnimationFrame(frame);
   }
@@ -1363,9 +1549,23 @@
     if(gauge>=GAUGE_MAX && gdx*gdx+gdy*gdy <= (g.rr+6)*(g.rr+6)){ e.preventDefault(); ensureAudio(); armRainbow(); return; }
     const cc=dropClockPos(), cdx=x-cc.x, cdy=y-cc.y;
     if(cdx*cdx+cdy*cdy <= (cc.rr+6)*(cc.rr+6)){ e.preventDefault(); ensureAudio(); useFreeze(); return; }
+    if(dragAim){
+      if(playing() && !bullet){ e.preventDefault(); ensureAudio(); dragging=true; aimFromPoint(x,y); }
+      return;
+    }
     const dx=x-shooterX, dy=y-shooterY, hit=r+34;
     if(dx*dx+dy*dy <= hit*hit){ e.preventDefault(); ensureAudio(); shoot(); }
   });
+  cv.addEventListener('pointermove',e=>{
+    if(!dragging || !dragAim) return;
+    const rect=cv.getBoundingClientRect();
+    aimFromPoint(e.clientX-rect.left, e.clientY-rect.top);
+  });
+  window.addEventListener('pointerup',()=>{
+    if(!dragging) return; dragging=false;
+    if(dragAim && playing() && !bullet){ ensureAudio(); shoot(); }
+  });
+  window.addEventListener('pointercancel',()=>{ dragging=false; });
   // tap the (full) gauge bar to arm the rainbow skill
   // dedicated skill button (the gauge bar itself is not tappable, to avoid accidental use)
   // skill is activated by tapping the circular gauge dial (handled in the canvas pointerdown above)
@@ -1402,7 +1602,7 @@
   const settingsPanel=document.getElementById('settingsPanel');
   function openSettings(){
     hideAllPanels();
-    updateSoundLabel(); updateFsIcon();
+    updateSoundLabel(); updateFsIcon(); updateDragLabel();
     paused=true; rotDir=0; settingsPanel.classList.add('show');
   }
   function closeSettings(){ settingsPanel.classList.remove('show'); if(state==='play') paused=false; }
@@ -1415,6 +1615,7 @@
   document.getElementById('mResume').addEventListener('click',closeSettings);
   document.getElementById('mBgm').addEventListener('click',toggleBgm);
   document.getElementById('mSfx').addEventListener('click',toggleSfx);
+  document.getElementById('mDrag').addEventListener('click',toggleDrag);
   document.getElementById('mFs').addEventListener('click',()=>{ if(isFs()) exitFs(); else enterFs(); });
   document.getElementById('mRestart').addEventListener('click',()=>{ closeSettings(); newGame(); });
   document.getElementById('mQuit').addEventListener('click',()=>{ if(state==='play'){ closeSettings(); endGame(true); } else { showStart(); } });
